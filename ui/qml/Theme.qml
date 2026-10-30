@@ -145,8 +145,39 @@ QtObject {
     readonly property color fieldSecretBackground: isDark ? "#0D1117" : "#E3E8F0"
 
     // --- Fonts ------------------------------------------------------------
-    readonly property string monoFont: "Consolas"
-    readonly property string uiFont: "Segoe UI"
+    // Qt takes one family name, never a comma list, so resolve the first
+    // *installed* candidate. Asking for a family that is not there makes Qt
+    // substitute silently (different metrics per machine) and logs a missing
+    // family warning. ``_fontFamilies`` is captured once, not per lookup.
+    readonly property var _fontFamilies: Qt.fontFamilies()
+    readonly property string _systemFont: Qt.application.font ? Qt.application.font.family : ""
+
+    function pickFamily(candidates) {
+        var installed = _fontFamilies || []
+        for (var i = 0; i < candidates.length; i++) {
+            var want = (candidates[i] || "").toLowerCase()
+            if (!want)
+                continue
+            for (var j = 0; j < installed.length; j++) {
+                if (installed[j].toLowerCase() === want)
+                    return installed[j]
+            }
+        }
+        // Nothing matched: still return a real-ish name rather than "".
+        return candidates[candidates.length - 1]
+    }
+
+    readonly property string uiFont: pickFamily([
+        _systemFont,
+        "Segoe UI Variable Text", "Segoe UI", "Inter",
+        "Noto Sans", "DejaVu Sans", "Arial"
+    ])
+    // Monospace is chosen from a list for the same reason; numeric columns
+    // (size, percent, paths) must stay aligned.
+    readonly property string monoFont: pickFamily([
+        "Cascadia Mono", "Cascadia Code", "Consolas",
+        "DejaVu Sans Mono", "Courier New"
+    ])
 
     // --- Geometry ---------------------------------------------------------
     readonly property int controlHeight: comfortable ? 38 : 34

@@ -8,6 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# The offscreen platform starts with an empty font database unless it is told
+# where system fonts live; without this, font resolution falls back arbitrarily.
+os.environ.setdefault(
+    "QT_QPA_FONTDIR",
+    os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"),
+)
 # Must match main.py: our controls replace `background` / `contentItem`, which
 # the native Windows style refuses (and then silently ignores them).
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")

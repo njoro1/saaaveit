@@ -87,6 +87,28 @@ class TestShell:
         assert ui.root is not None
         assert ui.warnings == [], ui.warnings
 
+    def test_theme_fonts_resolve_to_installed_families(self, ui):
+        """``Theme.uiFont``/``monoFont`` must name a family Qt can actually load."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QFontDatabase
+        from PySide6.QtQml import QQmlComponent
+
+        component = QQmlComponent(ui.engine)
+        component.setData(
+            b"import QtQuick\nimport \".\"\n"
+            b"QtObject {\n"
+            b"  property string ui: Theme.uiFont\n"
+            b"  property string mono: Theme.monoFont\n"
+            b"}\n",
+            QUrl.fromLocalFile(str(QML_DIR / "ThemeProbe.qml")),
+        )
+        assert component.isReady(), [e.toString() for e in component.errors()]
+        probe = component.create()
+        assert probe is not None, [e.toString() for e in component.errors()]
+        families = set(QFontDatabase.families())
+        assert probe.property("ui") in families
+        assert probe.property("mono") in families
+
     def test_style_pin_overrides_the_environment(self, monkeypatch):
         import main
 
