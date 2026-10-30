@@ -1,0 +1,21 @@
+# Build output
+build/
+dist/
+*.spec.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Local logs and scratch
+*.log
+reproduce.py.bak
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
