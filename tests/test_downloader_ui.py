@@ -308,6 +308,49 @@ class TestSettingsPage:
             bridge.defaultSubtitleTrack = saved
 
 
+class TestMediaThumb:
+    """The 16:9 preview keeps its box in every state."""
+
+    def _create(self, ui, **props):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtQml import QQmlComponent
+
+        component = QQmlComponent(
+            ui.engine,
+            QUrl.fromLocalFile(str(QML_DIR / "components" / "MediaThumb.qml")),
+        )
+        assert component.isReady(), [e.toString() for e in component.errors()]
+        item = component.create()
+        assert item is not None, [e.toString() for e in component.errors()]
+        # Created root objects are QML-garbage-collectible; park this one under
+        # the window so it outlives the component wrapper.
+        item.setParent(ui.root)
+        for name, value in props.items():
+            assert item.setProperty(name, value)
+        return item
+
+    def test_height_follows_the_sixteen_by_nine_ratio(self, ui):
+        thumb = self._create(ui, width=320)
+        assert thumb.property("implicitHeight") == 180
+        thumb.setProperty("width", 160)
+        assert thumb.property("implicitHeight") == 90
+
+    def test_defaults_show_the_placeholder_not_the_pill(self, ui):
+        thumb = self._create(ui, width=224)
+        assert thumb.property("hasImage") is False
+        image = _find(thumb, "mediaThumb.image")
+        assert image.property("source").toString() == ""
+        assert _find(thumb, "mediaThumb.placeholder").property("visible") is True
+        assert _find(thumb, "mediaThumb.durationPill").property("visible") is False
+
+    def test_duration_pill_uses_the_mono_clock(self, ui):
+        thumb = self._create(ui, width=224, duration=95)
+        pill = _find(thumb, "mediaThumb.durationPill")
+        assert pill.property("visible") is True
+        label = _find(thumb, "mediaThumb.durationLabel")
+        assert label.property("text") == "1:35"
+
+
 class TestNoForeignVocabulary:
     """The downloader must never mention the translator, and vice versa."""
 

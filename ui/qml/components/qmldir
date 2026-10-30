@@ -12,6 +12,7 @@ EmptyState 1.0 EmptyState.qml
 FormatTable 1.0 FormatTable.qml
 Icon 1.0 Icon.qml
 IconRail 1.0 IconRail.qml
+MediaThumb 1.0 MediaThumb.qml
 ReadinessChecklist 1.0 ReadinessChecklist.qml
 SegmentedControl 1.0 SegmentedControl.qml
 SettingsRow 1.0 SettingsRow.qml
