@@ -21,6 +21,7 @@ Item {
     property string query: ""
     property int activeIndex: 0
     property var entries: []
+    readonly property var _overlayShadow: Theme.shadowFor(Theme.elevationOverlay)
 
     function entry(name, detail, shortcut, action, page) {
         return {
@@ -105,12 +106,30 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, Theme.isDark ? 0.55 : 0.30)
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
             onClicked: root.close()
         }
+    }
+
+    // Level-3 elevation rings. Declared before the panel so they paint behind
+    // its opaque surface.
+    Rectangle {
+        anchors.fill: panel
+        anchors.margins: -4
+        radius: Theme.radiusLg + 4
+        color: Theme.shadowColor
+        opacity: root._overlayShadow.opacity * 0.5
+    }
+
+    Rectangle {
+        anchors.fill: panel
+        anchors.margins: -2
+        radius: Theme.radiusLg + 2
+        color: Theme.shadowColor
+        opacity: root._overlayShadow.opacity
     }
 
     Rectangle {

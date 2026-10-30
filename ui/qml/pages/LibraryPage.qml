@@ -224,10 +224,37 @@ Item {
         standardButtons: Dialog.Cancel | Dialog.Ok
         width: 420
 
+        Overlay.modal: Rectangle { color: Theme.scrim }
+
+        // Level-3 elevation; the background itself is transparent so the
+        // surface can sit above its shadow rings.
         background: Rectangle {
-            color: Theme.surface
-            border.color: Theme.borderStrong
-            radius: Theme.radiusLg
+            id: dialogBg
+            color: "transparent"
+            readonly property var _shadow: Theme.shadowFor(Theme.elevationOverlay)
+
+            Rectangle {
+                anchors.fill: surface
+                anchors.margins: -4
+                radius: Theme.radiusLg + 4
+                color: Theme.shadowColor
+                opacity: dialogBg._shadow.opacity * 0.5
+            }
+
+            Rectangle {
+                anchors.fill: surface
+                anchors.margins: -2
+                radius: Theme.radiusLg + 2
+                color: Theme.shadowColor
+                opacity: dialogBg._shadow.opacity
+            }
+
+            Rectangle {
+                id: surface
+                anchors.fill: parent
+                color: Theme.surface
+                radius: Theme.radiusLg
+            }
         }
 
         contentItem: Label {

@@ -125,6 +125,10 @@ QtObject {
         return { opacity: 0, blur: 0, yOffset: 0 }
     }
 
+    // Scrim behind overlays (palette, dialogs). Only the alpha differs by
+    // theme; both themes dim toward black.
+    readonly property color scrim: Qt.rgba(0, 0, 0, isDark ? 0.55 : 0.30)
+
     // --- Text -------------------------------------------------------------
     // Three steps of the same ramp. All three are read as running text, so all
     // three clear AA (4.5:1) on the *lightest* surface they can land on —
