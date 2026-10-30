@@ -69,11 +69,11 @@ Item {
                     anchors.rightMargin: 10
                     spacing: Theme.sm
 
-                    Label { Layout.fillWidth: true; text: "FILE"; color: Theme.textMuted; font.pixelSize: 10; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 70; text: "KIND"; color: Theme.textMuted; font.pixelSize: 10; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 160; text: "FORMAT / TRACK"; color: Theme.textMuted; font.pixelSize: 10; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 70; text: "SIZE"; color: Theme.textMuted; font.pixelSize: 10; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 120; text: "WHEN"; color: Theme.textMuted; font.pixelSize: 10; font.letterSpacing: 0.6 }
+                    Label { Layout.fillWidth: true; text: "FILE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
+                    Label { Layout.preferredWidth: 70; text: "KIND"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
+                    Label { Layout.preferredWidth: 160; text: "FORMAT / TRACK"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
+                    Label { Layout.preferredWidth: 70; text: "SIZE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
+                    Label { Layout.preferredWidth: 120; text: "WHEN"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
                     Item { Layout.preferredWidth: 180 }
                 }
             }
@@ -93,11 +93,15 @@ Item {
                     required property int index
 
                     width: list.width
-                    height: 40
+                    // The first cell can carry two lines (name + "missing from
+                    // disk"). A fixed 40px row let the second line bleed into
+                    // the row below once body text moved to 13px.
+                    height: Math.max(40, rowBody.implicitHeight + 12)
                     color: index === list.currentIndex ? Theme.accentSoft
                          : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
 
                     RowLayout {
+                        id: rowBody
                         anchors.fill: parent
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
@@ -121,7 +125,7 @@ Item {
                                 visible: !row.modelData.exists
                                 text: "missing from disk"
                                 color: Theme.warning
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontTiny
                             }
                         }
 

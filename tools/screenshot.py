@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -26,10 +28,40 @@ from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 # ``rootObjects()[0]`` degrades to a plain QWindow and ``grabWindow()`` is gone.
 from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401
 
+# Isolate persisted state before the bridge is imported/constructed: a
+# screenshot must never read or write the user's real settings and history.
+# ``QSettings.setDefaultFormat`` is not enough here — Qt has already created
+# QSettings instances by the time the GUI modules are imported on Windows, so
+# the store is replaced outright.
+from PySide6.QtCore import QSettings  # noqa: E402
+from src import media_source, store  # noqa: E402
+
+_SHOTS_SETTINGS = QSettings(
+    str(Path(tempfile.mkdtemp(prefix="saaaveit-shots-")) / "settings.ini"),
+    QSettings.IniFormat,
+)
+_SHOTS_SETTINGS.clear()
+_SHOTS_SETTINGS.sync()
+store.settings = lambda: _SHOTS_SETTINGS
+
 from app.bridge import DownloaderBridge  # noqa: E402
-from src import media_source  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
+
+
+def _seed_history(bridge) -> None:
+    """Three demo rows so the Library page has something to show."""
+    demo = Path(tempfile.mkdtemp(prefix="saaaveit-demo-"))
+    rows = [
+        ("Demo video [dQw4w9WgXcQ].mp4", "video", True),
+        ("Demo video [dQw4w9WgXcQ].ja.srt", "subtitle", True),
+        ("Deleted video [aaaaaaaaaaa].mp4", "video", False),
+    ]
+    for name, kind, exists in rows:
+        path = demo / name
+        if exists:
+            path.write_bytes(b"x" * 3072)
+        bridge._record(str(path), kind)
 
 
 def _payload() -> dict:
@@ -63,6 +95,19 @@ def _payload() -> dict:
     }
 
 
+def _settle(app, ms: int = 260) -> None:
+    """Pump events for real time so theme ``ColorAnimation``s finish.
+
+    ``processEvents`` alone does not advance animation timers, so a grab right
+    after a theme switch catches controls mid-fade (e.g. a dark button fill on
+    a light page).
+    """
+    deadline = time.monotonic() + ms / 1000.0
+    while time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.005)
+
+
 def main() -> int:
     outdir = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "shots"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +120,7 @@ def main() -> int:
     bridge._url = "https://example.com/video?v=dQw4w9WgXcQ"
     bridge._info_gen += 1
     bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(_payload()))
+    _seed_history(bridge)
 
     engine.rootContext().setContextProperty("appBridge", bridge)
     engine.load(QUrl.fromLocalFile(str(QML_DIR / "Main.qml")))
@@ -88,8 +134,7 @@ def main() -> int:
         for theme in ("dark", "light"):
             bridge._theme_name = theme
             bridge.themeChanged.emit()
-            for _ in range(60):
-                app.processEvents()
+            _settle(app)
             image = root.grabWindow()
             name = f"page{page}-{theme}.png"
             image.save(str(outdir / name))

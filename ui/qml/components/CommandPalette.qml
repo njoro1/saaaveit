@@ -191,7 +191,7 @@ Item {
                         Label {
                             text: row.modelData.detail
                             color: Theme.textMuted
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fontTiny
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
@@ -203,7 +203,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.shortcut
                         color: Theme.textMuted
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontTiny
                         font.family: Theme.monoFont
                     }
 

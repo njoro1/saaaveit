@@ -104,7 +104,7 @@ ColumnLayout {
         implicitHeight: 34
         radius: Theme.radiusSm
         visible: englishTrack() !== null
-        property var data: englishTrack()
+        property var track: englishTrack()
         color: (data && data.code === root.selected) ? Theme.accentSoft : (engMouse.containsMouse ? Theme.surfaceAlt : "transparent")
         RowLayout {
             anchors.fill: parent
@@ -114,21 +114,21 @@ ColumnLayout {
             Rectangle {
                 implicitWidth: 14; implicitHeight: 14; radius: 7
                 color: "transparent"
-                border.width: (engItem.data && engItem.data.code === root.selected) ? 4 : 1
-                border.color: (engItem.data && engItem.data.code === root.selected) ? Theme.accent : Theme.borderStrong
+                border.width: (engItem.track && engItem.track.code === root.selected) ? 4 : 1
+                border.color: (engItem.track && engItem.track.code === root.selected) ? Theme.accent : Theme.borderStrong
             }
             Label {
                 Layout.fillWidth: true
-                text: (engItem.data ? engItem.data.label : "English")
-                color: (engItem.data && engItem.data.code === root.selected) ? Theme.text : Theme.textDim
+                text: (engItem.track ? engItem.track.label : "English")
+                color: (engItem.track && engItem.track.code === root.selected) ? Theme.text : Theme.textDim
                 font.pixelSize: Theme.fontSmall
-                font.bold: (engItem.data && engItem.data.code === root.selected)
+                font.bold: (engItem.track && engItem.track.code === root.selected)
             }
             Label {
-                visible: !!(engItem.data && engItem.data.isOriginal)
+                visible: !!(engItem.track && engItem.track.isOriginal)
                 text: "original"
                 color: Theme.textMuted
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontTiny
             }
         }
         MouseArea {
@@ -136,7 +136,7 @@ ColumnLayout {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: engItem.data ? root.choose(engItem.data.code) : root.choose("")
+            onClicked: engItem.track ? root.choose(engItem.track.code) : root.choose("")
         }
     }
 

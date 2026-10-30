@@ -17,9 +17,9 @@ Rectangle {
     color: "transparent"
 
     readonly property var rows: appBridge.formatRows
-    readonly property real codecWidth: 104
-    readonly property real resWidth: 74
-    readonly property real sizeWidth: 92
+    readonly property real codecWidth: 112
+    readonly property real resWidth: 84
+    readonly property real sizeWidth: 104
 
     ColumnLayout {
         id: content
@@ -43,21 +43,21 @@ Rectangle {
                     Layout.preferredWidth: root.codecWidth
                     text: "CODEC"
                     color: Theme.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontTiny
                     font.letterSpacing: 0.6
                 }
                 Label {
                     Layout.preferredWidth: root.resWidth
                     text: "RESOLUTION"
                     color: Theme.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontTiny
                     font.letterSpacing: 0.6
                 }
                 Label {
                     Layout.fillWidth: true
                     text: "STREAM"
                     color: Theme.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontTiny
                     font.letterSpacing: 0.6
                 }
                 Label {
@@ -65,7 +65,7 @@ Rectangle {
                     horizontalAlignment: Text.AlignRight
                     text: "SIZE"
                     color: Theme.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontTiny
                     font.letterSpacing: 0.6
                 }
             }

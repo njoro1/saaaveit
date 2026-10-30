@@ -135,7 +135,7 @@ Item {
                     hint: "Which track the Subtitle section preselects after Inspect."
                     BoundComboBox {
                         objectName: "settings.defaultSubtitleTrack"
-                        Layout.preferredWidth: 260
+                        Layout.preferredWidth: 300
                         label: "Default subtitle track"
                         textRole: "label"
                         valueRole: "id"

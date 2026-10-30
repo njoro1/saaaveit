@@ -9,7 +9,7 @@ import QtQuick
 // Two axes are pushed in from Main.qml (a singleton cannot reliably read the
 // ``appBridge`` context property):
 //   * themeName   - "dark" (default) | "light"
-//   * comfortable - larger hit targets and +2px text
+//   * comfortable - larger hit targets and +1px text
 //   * reducedMotion - pulsing dots and sliding bars stop
 //   * accentName  - one of ``accentChoices``; picks the brand hue
 QtObject {
@@ -18,7 +18,7 @@ QtObject {
     readonly property bool isDark: themeName !== "light"
 
     property bool comfortable: false
-    readonly property int fontBoost: comfortable ? 2 : 0
+    readonly property int fontBoost: comfortable ? 1 : 0
 
     property bool reducedMotion: false
 
@@ -66,14 +66,16 @@ QtObject {
     readonly property int radiusLg: 12
     readonly property int radiusXl: 16
 
-    // --- Type scale (10.5 / 11.5 / 12.5 / 13 / 15 / 19 / 22) --------------
-    readonly property int fontTiny: 11 + fontBoost
-    readonly property int fontSmall: 12 + fontBoost
-    readonly property int fontBody: 13 + fontBoost
-    readonly property int fontLabel: 14 + fontBoost
-    readonly property int fontTitle: 15 + fontBoost
-    readonly property int fontH2: 19 + fontBoost
-    readonly property int fontH1: 22 + fontBoost
+    // --- Type scale (12 / 13 / 14 / 15 / 17 / 21 / 26) ---------------------
+    // Desktop baselines: nothing below 12px, body at 14px. The previous ramp
+    // (13px body, 10px table headers) read as a dense admin tool.
+    readonly property int fontTiny: 12 + fontBoost
+    readonly property int fontSmall: 13 + fontBoost
+    readonly property int fontBody: 14 + fontBoost
+    readonly property int fontLabel: 15 + fontBoost
+    readonly property int fontTitle: 17 + fontBoost
+    readonly property int fontH2: 21 + fontBoost
+    readonly property int fontH1: 26 + fontBoost
 
     // --- Surfaces ---------------------------------------------------------
     readonly property color background: isDark ? "#0A0C11" : "#F5F6FA"

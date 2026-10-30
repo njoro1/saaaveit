@@ -71,7 +71,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         text: parent.parent.modelData.label
                         color: parent.parent.isOn ? Theme.accent : Theme.textMuted
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontTiny
                         font.bold: parent.parent.isOn
                     }
                 }
@@ -119,7 +119,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignHCenter
                     text: "Ctrl K"
                     color: Theme.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontTiny
                 }
             }
 
