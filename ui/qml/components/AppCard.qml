@@ -24,11 +24,37 @@ Rectangle {
     property bool tight: false
     property int padding: tight ? Theme.md : 15
 
-    color: Theme.surface
-    radius: Theme.radiusLg
-    border.color: Theme.border
-    border.width: 1
+    // The root only reserves the layout cell; the surface and its shadow are
+    // siblings so the shadow can sit behind the surface. Level-1 only (T2.1):
+    // two stacked rings instead of MultiEffect, so the frozen build needs no
+    // extra QML module and scrolling pays no shader cost.
+    color: "transparent"
     implicitHeight: outer.implicitHeight
+
+    readonly property var _shadow: Theme.shadowFor(Theme.elevationCard)
+
+    Rectangle {
+        anchors.fill: surface
+        anchors.margins: -2
+        radius: Theme.radiusLg + 2
+        color: Theme.shadowColor
+        opacity: root._shadow.opacity * 0.5
+    }
+
+    Rectangle {
+        anchors.fill: surface
+        anchors.margins: -1
+        radius: Theme.radiusLg + 1
+        color: Theme.shadowColor
+        opacity: root._shadow.opacity * 0.9
+    }
+
+    Rectangle {
+        id: surface
+        anchors.fill: parent
+        radius: Theme.radiusLg
+        color: Theme.surface
+    }
 
     ColumnLayout {
         id: outer

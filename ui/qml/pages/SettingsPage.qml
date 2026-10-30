@@ -58,8 +58,12 @@ Item {
         contentWidth: availableWidth
 
         ColumnLayout {
-            width: scroller.availableWidth
+            x: Theme.xs
+            width: scroller.availableWidth - Theme.xs * 2
             spacing: Theme.md
+
+            // Room for the card shadow inside the clipped scroll area.
+            Item { Layout.preferredHeight: Theme.xs }
 
             // ------------------------------------------------ APPEARANCE
             AppCard {
