@@ -77,35 +77,66 @@ Item {
             AppCard {
                 Layout.fillWidth: true
                 title: "Video"
-                note: appBridge.hasInfo ? appBridge.videoTitle : ""
-
-                headerExtra: [
-                    Chip {
-                        visible: appBridge.hasInfo
-                        text: appBridge.sourceLanguage !== ""
-                              ? appBridge.sourceLanguage.toUpperCase() : "language unknown"
-                        tone: ""
-                    },
-                    Chip {
-                        visible: appBridge.hasInfo && appBridge.hasAv1
-                        text: "AV1"
-                        tone: "acc"
-                    },
-                    Chip {
-                        visible: appBridge.hasInfo && appBridge.hasVp9
-                        text: "VP9"
-                        tone: ""
-                    },
-                    Chip {
-                        visible: appBridge.hasInfo && appBridge.hasH264
-                        text: "H.264"
-                        tone: ""
-                    }
-                ]
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 8
+
+                    // Focal point once a link has been inspected: identity first,
+                    // then the editable link underneath it.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: appBridge.hasInfo
+                        spacing: Theme.sm
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Label {
+                                objectName: "download.heroTitle"
+                                Layout.fillWidth: true
+                                text: appBridge.videoTitle
+                                color: Theme.text
+                                font.pixelSize: Theme.fontH2
+                                font.bold: true
+                                wrapMode: Text.WordWrap
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.sm
+
+                                Chip {
+                                    text: appBridge.sourceLanguage !== ""
+                                          ? appBridge.sourceLanguage.toUpperCase() : "language unknown"
+                                    tone: ""
+                                }
+                                Chip {
+                                    visible: appBridge.hasAv1
+                                    text: "AV1"
+                                    tone: "acc"
+                                }
+                                Chip {
+                                    visible: appBridge.hasVp9
+                                    text: "VP9"
+                                    tone: ""
+                                }
+                                Chip {
+                                    visible: appBridge.hasH264
+                                    text: "H.264"
+                                    tone: ""
+                                }
+                                Label {
+                                    visible: page.hasSelection && appBridge.selectedFileSize > 0
+                                    text: page.humanSize(appBridge.selectedFileSize) + " selected"
+                                    color: Theme.textMuted
+                                    font.pixelSize: Theme.fontSmall
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
+                        }
+                    }
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -115,6 +146,9 @@ Item {
                             id: urlField
                             objectName: "download.urlField"
                             Layout.fillWidth: true
+                            // Without a hero the link is the page's focal control.
+                            height: appBridge.hasInfo ? Theme.controlHeight
+                                                      : Theme.controlHeight + Theme.sm
                             label: "Video URL"
                             placeholderText: "https://example.com/video?v=…"
                             text: appBridge.url
@@ -147,16 +181,6 @@ Item {
                         text: appBridge.infoError
                         color: Theme.error
                         font.pixelSize: Theme.fontSmall
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Label {
-                        Layout.fillWidth: true
-                        visible: appBridge.hasInfo
-                        text: appBridge.videoTitle
-                        color: Theme.text
-                        font.pixelSize: Theme.fontTitle
-                        font.bold: true
                         wrapMode: Text.WordWrap
                     }
 
