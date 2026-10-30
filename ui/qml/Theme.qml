@@ -219,7 +219,7 @@ QtObject {
     readonly property int rowHeight: comfortable ? 40 : 34
     // Legacy alias: ``fieldHeight`` was the old control height.
     readonly property int fieldHeight: controlHeight
-    readonly property int topbarHeight: 56
+    readonly property int topbarHeight: 48
     readonly property int railWidth: 64
     readonly property int statusbarHeight: 30
     // Content stops growing past this width so long rows stay readable.

@@ -101,7 +101,6 @@ ApplicationWindow {
 
         CommandBar {
             Layout.fillWidth: true
-            page: window.currentPage
             headline: appBridge.hasInfo ? appBridge.videoTitle : ""
             onOpenPalette: palette.open()
         }

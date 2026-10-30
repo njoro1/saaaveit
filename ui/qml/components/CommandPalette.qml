@@ -179,6 +179,7 @@ Item {
                 clip: true
                 spacing: 2
                 model: root.filtered()
+                ScrollBar.vertical: AppScrollBar { }
 
                 delegate: Rectangle {
                     id: row

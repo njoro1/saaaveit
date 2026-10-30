@@ -36,8 +36,11 @@ RowLayout {
         spacing: 8
     }
 
-    ToolTip.text: root.hint
-    ToolTip.visible: root.hint !== "" && hintHover.hovered
-    ToolTip.delay: 500
     HoverHandler { id: hintHover }
+
+    AppToolTip {
+        text: root.hint
+        hovered: root.hint !== "" && hintHover.hovered
+        showDelay: 500
+    }
 }

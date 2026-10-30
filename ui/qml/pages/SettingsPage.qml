@@ -56,6 +56,7 @@ Item {
         anchors.topMargin: Theme.md
         clip: true
         contentWidth: availableWidth
+        ScrollBar.vertical: AppScrollBar { }
 
         ColumnLayout {
             x: Theme.xs

@@ -63,16 +63,18 @@ Rectangle {
                     height: 22
                 }
 
-                ToolTip.visible: railMouse.containsMouse
-                ToolTip.text: modelData.label
-                ToolTip.delay: 400
-
                 MouseArea {
                     id: railMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.navigate(index)
+                }
+
+                AppToolTip {
+                    text: modelData.label
+                    hovered: railMouse.containsMouse
+                    showDelay: 400
                 }
 
                 Accessible.role: Accessible.PageTab
@@ -102,16 +104,18 @@ Rectangle {
                 height: 22
             }
 
-            ToolTip.visible: paletteMouse.containsMouse
-            ToolTip.text: "Command palette · Ctrl K"
-            ToolTip.delay: 400
-
             MouseArea {
                 id: paletteMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.openPalette()
+            }
+
+            AppToolTip {
+                text: "Command palette · Ctrl K"
+                hovered: paletteMouse.containsMouse
+                showDelay: 400
             }
 
             Accessible.role: Accessible.Button

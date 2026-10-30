@@ -11,8 +11,15 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from PySide6.QtCore import QUrl  # noqa: E402
-from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtCore import QPointF, QRectF, Qt, QUrl  # noqa: E402
+from PySide6.QtGui import (  # noqa: E402
+    QColor,
+    QGuiApplication,
+    QIcon,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 from app.bridge import DownloaderBridge, base_dir, setup_logging  # noqa: E402
@@ -63,6 +70,41 @@ def _pin_style() -> None:
     os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
 
 
+def _app_icon() -> QIcon:
+    """Draw the window icon in code.
+
+    The frozen bundle ships no image plugins beyond the defaults, so an .ico
+    file would be one more resource that can go missing. The glyph is the same
+    ``download`` stroke path the QML icon set uses.
+    """
+    icon = QIcon()
+    accent = QColor("#8A6BFF")
+    ink = QColor("#0A0C11")
+    for size in (16, 24, 32, 48, 64, 128, 256):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(accent)
+        radius = size * 0.22
+        painter.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
+
+        scale = size / 24.0
+        pen = QPen(ink, max(1.4, 2.0 * scale))
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        # M12 4v11 M7.5 11l4.5 4.5 4.5-4.5 M4.5 19.5h15
+        painter.drawLine(QPointF(12 * scale, 4 * scale), QPointF(12 * scale, 15.5 * scale))
+        painter.drawLine(QPointF(7.5 * scale, 11 * scale), QPointF(12 * scale, 15.5 * scale))
+        painter.drawLine(QPointF(16.5 * scale, 11 * scale), QPointF(12 * scale, 15.5 * scale))
+        painter.drawLine(QPointF(4.5 * scale, 19.5 * scale), QPointF(19.5 * scale, 19.5 * scale))
+        painter.end()
+        icon.addPixmap(pixmap)
+    return icon
+
+
 def main() -> int:
     _pin_style()
 
@@ -86,6 +128,8 @@ def main() -> int:
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Saaaveit")
     app.setOrganizationName("Njoro")
+    app.setApplicationDisplayName("Saaaveit")
+    app.setWindowIcon(_app_icon())
 
     engine = QQmlApplicationEngine()
     if os.path.isdir(qml_dir):

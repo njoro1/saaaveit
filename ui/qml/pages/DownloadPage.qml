@@ -75,6 +75,7 @@ Item {
         anchors.bottomMargin: Theme.sm
         clip: true
         contentWidth: availableWidth
+        ScrollBar.vertical: AppScrollBar { }
 
         ColumnLayout {
             anchors.horizontalCenter: parent.horizontalCenter

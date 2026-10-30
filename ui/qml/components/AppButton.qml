@@ -12,6 +12,8 @@ Button {
     property bool small: false
     property string iconName: ""
     property int iconSize: small ? 14 : 15
+    // Hover text; primarily for icon-only buttons whose label is empty.
+    property string tooltip: ""
 
     readonly property bool _primary: variant === "primary"
     readonly property bool _danger: variant === "danger"
@@ -85,6 +87,12 @@ Button {
             font.weight: root._primary ? Font.DemiBold : Font.Normal
             verticalAlignment: Text.AlignVCenter
         }
+    }
+
+    AppToolTip {
+        text: root.tooltip
+        hovered: root.hovered && root.tooltip !== ""
+        showDelay: 400
     }
 
     Accessible.role: Accessible.Button

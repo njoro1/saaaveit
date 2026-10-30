@@ -73,18 +73,23 @@ ComboBox {
         // the model explicitly (object models use textRole, arrays use modelData).
         text: root.textRole ? model[root.textRole] : modelData
         highlighted: root.highlightedIndex === index
+        // The stored selection and the hovered/keyboard row share the tint, so
+        // the selected entry stays visible before and after scrolling.
+        readonly property bool isCurrent: root.currentIndex === index
 
         contentItem: Label {
             text: itemDelegate.text
-            color: itemDelegate.highlighted ? Theme.text : Theme.textDim
+            color: itemDelegate.isCurrent ? Theme.accent
+                 : (itemDelegate.highlighted || itemDelegate.hovered) ? Theme.text : Theme.textDim
             font.pixelSize: Theme.fontBody
             verticalAlignment: Text.AlignVCenter
             leftPadding: 8
             elide: Text.ElideRight
         }
         background: Rectangle {
-            color: itemDelegate.highlighted ? Theme.surfaceRaised : "transparent"
-            radius: Theme.radiusXs
+            color: itemDelegate.isCurrent || itemDelegate.highlighted || itemDelegate.hovered
+                   ? Theme.accentSoft : "transparent"
+            radius: Theme.radiusSm
         }
     }
 
@@ -92,10 +97,35 @@ ComboBox {
         y: root.height + 2
         width: root.width
         padding: 4
-        background: Rectangle {
-            color: Theme.surface
-            border.color: Theme.borderStrong
-            radius: Theme.radiusSm
+        background: Item {
+            id: popupBg
+
+            readonly property var _shadow: Theme.shadowFor(Theme.elevationOverlay)
+
+            Rectangle {
+                anchors.fill: card
+                anchors.margins: -3
+                radius: Theme.radiusMd + 3
+                color: Theme.shadowColor
+                opacity: popupBg._shadow.opacity * 0.5
+            }
+
+            Rectangle {
+                anchors.fill: card
+                anchors.margins: -1
+                radius: Theme.radiusMd + 1
+                color: Theme.shadowColor
+                opacity: popupBg._shadow.opacity
+            }
+
+            Rectangle {
+                id: card
+                anchors.fill: parent
+                color: Theme.surfaceRaised
+                border.width: 1
+                border.color: Theme.borderStrong
+                radius: Theme.radiusMd
+            }
         }
         contentItem: ListView {
             clip: true
@@ -106,7 +136,7 @@ ComboBox {
             model: root.popup.visible ? root.delegateModel : null
             currentIndex: root.highlightedIndex
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { }
         }
     }
 }

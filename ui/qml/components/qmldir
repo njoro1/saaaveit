@@ -1,5 +1,7 @@
 AppButton 1.0 AppButton.qml
 AppCard 1.0 AppCard.qml
+AppScrollBar 1.0 AppScrollBar.qml
+AppToolTip 1.0 AppToolTip.qml
 AppSwitch 1.0 AppSwitch.qml
 BoundComboBox 1.0 BoundComboBox.qml
 Chip 1.0 Chip.qml

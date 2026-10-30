@@ -44,6 +44,7 @@ Item {
             }
 
             AppButton {
+                id: clearButton
                 objectName: "library.clearButton"
                 text: "Clear history"
                 iconName: "x"
@@ -85,6 +86,7 @@ Item {
                 clip: true
                 spacing: 0
                 model: appBridge.history
+                ScrollBar.vertical: AppScrollBar { }
 
                 delegate: Rectangle {
                     id: row
@@ -186,6 +188,7 @@ Item {
                                 enabled: row.modelData.exists
                                 Layout.preferredWidth: Theme.controlHeightSmall
                                 Accessible.name: "Open folder"
+                                tooltip: "Open folder"
                                 onClicked: appBridge.openDownloadedFolder(row.modelData.index)
                             }
 
@@ -197,6 +200,7 @@ Item {
                                 variant: "ghost"
                                 Layout.preferredWidth: Theme.controlHeightSmall
                                 Accessible.name: "More actions"
+                                tooltip: "More actions"
                                 onClicked: rowMenu.popup(moreButton)
                             }
                         }
@@ -206,8 +210,64 @@ Item {
                     // instead of competing with Open/Folder for width.
                     Menu {
                         id: rowMenu
+                        objectName: "library.rowMenu"
+                        width: 176
+                        padding: 4
+
+                        background: Item {
+                            id: menuBg
+
+                            readonly property var _shadow: Theme.shadowFor(Theme.elevationOverlay)
+
+                            Rectangle {
+                                anchors.fill: menuCard
+                                anchors.margins: -3
+                                radius: Theme.radiusMd + 3
+                                color: Theme.shadowColor
+                                opacity: menuBg._shadow.opacity * 0.5
+                            }
+
+                            Rectangle {
+                                anchors.fill: menuCard
+                                anchors.margins: -1
+                                radius: Theme.radiusMd + 1
+                                color: Theme.shadowColor
+                                opacity: menuBg._shadow.opacity
+                            }
+
+                            Rectangle {
+                                id: menuCard
+                                anchors.fill: parent
+                                color: Theme.surfaceRaised
+                                border.width: 1
+                                border.color: Theme.borderStrong
+                                radius: Theme.radiusMd
+                            }
+                        }
+
+                        // Styling goes on the item itself: a Menu shows
+                        // statically declared MenuItems as-is, so `delegate`
+                        // would only reach string/array models.
                         MenuItem {
+                            id: copyItem
+                            width: rowMenu.availableWidth
+                            height: 32
                             text: "Copy path"
+
+                            contentItem: Label {
+                                text: copyItem.text
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSmall
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 10
+                            }
+
+                            background: Rectangle {
+                                color: copyItem.highlighted || copyItem.hovered
+                                       ? Theme.accentSoft : "transparent"
+                                radius: Theme.radiusSm
+                            }
+
                             onTriggered: appBridge.copyDownloadPath(row.modelData.index)
                         }
                     }
@@ -246,7 +306,10 @@ Item {
         title: "Clear download history?"
         modal: true
         anchors.centerIn: parent
-        standardButtons: Dialog.Cancel | Dialog.Ok
+        // Escape cancels; there is no default (Enter) action because the only
+        // affirmative is destructive.
+        closePolicy: Popup.CloseOnEscape
+        padding: Theme.lg
         width: 420
 
         Overlay.modal: Rectangle { color: Theme.scrim }
@@ -289,6 +352,37 @@ Item {
             wrapMode: Text.WordWrap
         }
 
+        // Basic style ships a light header band; replace it with tokens so the
+        // title keeps the dialog surface in both themes.
+        header: Label {
+            text: confirmClear.title
+            color: Theme.text
+            font.pixelSize: Theme.fontLabel
+            font.weight: Font.DemiBold
+        }
+
+        footer: RowLayout {
+            spacing: Theme.sm
+
+            Item { Layout.fillWidth: true }
+
+            AppButton {
+                objectName: "library.clearCancel"
+                text: "Cancel"
+                variant: "ghost"
+                onClicked: confirmClear.reject()
+            }
+
+            AppButton {
+                objectName: "library.clearConfirm"
+                text: "Clear history"
+                variant: "danger"
+                onClicked: confirmClear.accept()
+            }
+        }
+
         onAccepted: appBridge.clearHistory()
+        // Keyboard focus comes back to the button that opened the dialog.
+        onClosed: clearButton.forceActiveFocus()
     }
 }

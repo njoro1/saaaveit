@@ -3,20 +3,18 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// Top command bar: app name, current screen, and the two global affordances
-// (command palette / theme).
+// Top command bar: the current video as context plus the two global
+// affordances (command palette / theme). The screen name lives in each page's
+// H1; the app name lives in the native title bar.
 Rectangle {
     id: root
 
-    property int page: 0
     property string headline: ""
 
     signal openPalette()
 
     implicitHeight: Theme.topbarHeight
     color: Theme.surface
-
-    readonly property var pageNames: ["Download", "Library", "Settings"]
 
     Rectangle {
         anchors.bottom: parent.bottom
@@ -31,46 +29,9 @@ Rectangle {
         anchors.rightMargin: Theme.lg
         spacing: Theme.md
 
-        RowLayout {
-            spacing: 10
-
-            Rectangle {
-                implicitWidth: 26
-                implicitHeight: 26
-                radius: Theme.radiusSm
-                color: Theme.accentSoft
-
-                Icon {
-                    anchors.centerIn: parent
-                    name: "download"
-                    width: 16
-                    height: 16
-                    color: Theme.accent
-                }
-            }
-
-            Label {
-                text: "Saaaveit"
-                color: Theme.text
-                font.pixelSize: Theme.fontTitle
-                font.bold: true
-            }
-        }
-
-        Rectangle {
-            implicitWidth: 1
-            implicitHeight: 18
-            color: Theme.border
-        }
-
-        Label {
-            text: root.pageNames[Math.max(0, Math.min(root.pageNames.length - 1, root.page))] || ""
-            color: Theme.textMuted
-            font.pixelSize: Theme.fontBody
-        }
-
-        Item { Layout.fillWidth: true }
-
+        // The native title bar already carries the app name and icon, and each
+        // page has its own H1; repeating either here would double the chrome
+        // (T6.5). The bar keeps the current video as context.
         Label {
             visible: root.headline !== ""
             Layout.maximumWidth: 520
@@ -79,6 +40,8 @@ Rectangle {
             font.pixelSize: Theme.fontSmall
             elide: Text.ElideMiddle
         }
+
+        Item { Layout.fillWidth: true }
 
         AppButton {
             objectName: "chrome.paletteButton"
