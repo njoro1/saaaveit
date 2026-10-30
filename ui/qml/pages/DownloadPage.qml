@@ -16,6 +16,15 @@ Item {
     readonly property bool hasSelection: !!appBridge.selectedOption.format_selector
     readonly property bool wide: page.width >= 1280
 
+    // Preparing and merging have no meaningful percentage: show a sweep, not a
+    // frozen bar. A running download also never reads as 100% complete.
+    readonly property bool indeterminateStage: page.busy
+        && (appBridge.downloadStage === "preparing"
+            || appBridge.downloadStage === "merging")
+    readonly property int shownProgress: page.busy
+        ? Math.min(99, appBridge.downloadProgress)
+        : appBridge.downloadProgress
+
     function humanSize(bytes) {
         if (!bytes || bytes <= 0)
             return "unknown until download"
@@ -101,6 +110,13 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         visible: appBridge.hasInfo
+                        opacity: visible ? 1 : 0
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: Theme.reducedMotion ? 0 : 140
+                                easing.type: Easing.OutCubic
+                            }
+                        }
                         spacing: Theme.md
                         Layout.alignment: Qt.AlignTop
 
@@ -168,6 +184,40 @@ Item {
                                     font.pixelSize: Theme.fontSmall
                                 }
                                 Item { Layout.fillWidth: true }
+                            }
+                        }
+                    }
+
+                    // The skeleton occupies the hero's exact geometry, so the
+                    // real content arrives without a jump.
+                    RowLayout {
+                        objectName: "download.heroSkeleton"
+                        Layout.fillWidth: true
+                        visible: appBridge.infoLoading
+                        spacing: Theme.md
+                        Layout.alignment: Qt.AlignTop
+
+                        MediaThumb {
+                            Layout.preferredWidth: page.wide ? 224 : 160
+                            Layout.alignment: Qt.AlignTop
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignTop
+                            spacing: 8
+
+                            Accessible.role: Accessible.StaticText
+                            Accessible.name: "Inspecting formats and subtitle tracks"
+
+                            SkeletonBar {
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 440
+                                Layout.preferredHeight: Theme.fontH2
+                            }
+                            SkeletonBar {
+                                Layout.preferredWidth: 160
+                                Layout.preferredHeight: Theme.fontSmall
                             }
                         }
                     }
@@ -296,16 +346,37 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    Label {
-                        visible: appBridge.infoLoading
-                        text: "Inspecting formats and subtitle tracks…"
-                        color: Theme.textMuted
-                        font.pixelSize: Theme.fontSmall
+                    // Format rows arrive where the table will be; the text is
+                    // exposed to assistive tech, not repeated as body copy.
+                    ColumnLayout {
+                        objectName: "download.formatSkeleton"
                         Layout.fillWidth: true
+                        visible: appBridge.infoLoading
+                        spacing: Theme.sm
+
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: "Inspecting formats and subtitle tracks"
+
+                        Repeater {
+                            model: 4
+
+                            SkeletonBar {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Theme.rowHeight - Theme.xs * 2
+                            }
+                        }
                     }
 
                     FormatTable {
                         Layout.fillWidth: true
+                        visible: !appBridge.infoLoading
+                        opacity: visible ? 1 : 0
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: Theme.reducedMotion ? 0 : 140
+                                easing.type: Easing.OutCubic
+                            }
+                        }
                         onPicked: function (codec, resolution) {
                             appBridge.selectedCodec = codec
                             appBridge.selectedResolution = String(resolution)
@@ -413,16 +484,51 @@ Item {
                     }
 
                     Rectangle {
+                        id: progressTrack
                         Layout.fillWidth: true
-                        implicitHeight: 8
-                        radius: 4
+                        implicitHeight: Theme.xs + 4
+                        radius: height / 2
                         color: Theme.inset
+                        clip: true
 
                         Rectangle {
+                            id: progressFill
                             height: parent.height
                             radius: parent.radius
-                            width: parent.width * Math.max(0, Math.min(100, appBridge.downloadProgress)) / 100
-                            color: appBridge.statusState === "failed" ? Theme.error : Theme.accent
+                            width: page.indeterminateStage
+                                   ? parent.width
+                                   : parent.width * Math.max(0, Math.min(100, page.shownProgress)) / 100
+                            color: page.indeterminateStage
+                                   ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
+                                   : appBridge.statusState === "failed" ? Theme.error
+                                   : appBridge.statusState === "done" ? Theme.success
+                                   : Theme.accent
+                            // Easing would fight the indeterminate sweep and is
+                            // exactly what reduced motion must remove.
+                            Behavior on width {
+                                enabled: !Theme.reducedMotion && !page.indeterminateStage
+                                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                            }
+                        }
+
+                        Rectangle {
+                            id: progressSweep
+                            visible: page.indeterminateStage && !Theme.reducedMotion
+                            width: parent.width * 0.28
+                            height: parent.height
+                            radius: height / 2
+                            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.65)
+
+                            SequentialAnimation on x {
+                                running: progressSweep.visible
+                                loops: Animation.Infinite
+                                NumberAnimation {
+                                    from: -progressSweep.width
+                                    to: progressTrack.width
+                                    duration: 1100
+                                    easing.type: Easing.InOutQuad
+                                }
+                            }
                         }
                     }
 
@@ -447,7 +553,9 @@ Item {
                         Item { Layout.fillWidth: true }
 
                         Label {
-                            text: appBridge.downloadProgress + "%"
+                            text: page.indeterminateStage
+                                  ? "…"
+                                  : page.shownProgress + "%"
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontSmall
                             font.family: Theme.monoFont

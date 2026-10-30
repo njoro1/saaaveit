@@ -32,13 +32,38 @@ Item {
 
     implicitWidth: track.implicitWidth + 6
     implicitHeight: Theme.controlHeight
+    activeFocusOnTab: true
+
+    function _step(delta) {
+        if (!root.options || root.options.length === 0)
+            return
+        var index = -1
+        for (var i = 0; i < root.options.length; i++) {
+            if (root.options[i].id === root.current) {
+                index = i
+                break
+            }
+        }
+        if (index < 0)
+            index = delta > 0 ? -1 : 0
+        for (var step = 0; step < root.options.length; step++) {
+            index = (index + delta + root.options.length) % root.options.length
+            if (!root.isDisabled(root.options[index].id)) {
+                root.activated(root.options[index].id)
+                return
+            }
+        }
+    }
+
+    Keys.onLeftPressed: root._step(-1)
+    Keys.onRightPressed: root._step(1)
 
     Rectangle {
         anchors.fill: parent
         radius: Theme.radiusSm
         color: Theme.inset
-        border.color: Theme.border
-        border.width: 1
+        border.color: root.activeFocus ? Theme.accentLine : Theme.border
+        border.width: root.activeFocus ? 2 : 1
     }
 
     RowLayout {

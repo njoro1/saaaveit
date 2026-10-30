@@ -16,6 +16,7 @@ MediaThumb 1.0 MediaThumb.qml
 ReadinessChecklist 1.0 ReadinessChecklist.qml
 SegmentedControl 1.0 SegmentedControl.qml
 SettingsRow 1.0 SettingsRow.qml
+SkeletonBar 1.0 SkeletonBar.qml
 StatusBar 1.0 StatusBar.qml
 StatusMark 1.0 StatusMark.qml
 SubtitleTrackPicker 1.0 SubtitleTrackPicker.qml

@@ -27,8 +27,13 @@ Rectangle {
     color: root.clickable && chipHover.hovered
            ? Theme.surfaceAlt
            : (tone === "" ? Theme.surfaceRaised : Theme.toneTint(tone))
-    border.width: root.clickable ? 1 : 0
-    border.color: root.clickable ? Theme.borderSoft : "transparent"
+    border.width: root.clickable ? (root.activeFocus ? 2 : 1) : 0
+    border.color: root.activeFocus ? Theme.accentLine
+                 : root.clickable ? Theme.borderSoft : "transparent"
+    activeFocusOnTab: root.clickable
+
+    Keys.onReturnPressed: if (root.clickable) root.clicked()
+    Keys.onSpacePressed: if (root.clickable) root.clicked()
 
     RowLayout {
         id: row

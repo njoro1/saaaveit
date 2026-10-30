@@ -33,6 +33,19 @@ Button {
                             small ? Theme.controlHeightSmall : Theme.controlHeight)
     padding: 0
     opacity: enabled ? 1.0 : 0.45
+    activeFocusOnTab: true
+
+    // Press feedback is a transform, never a size change, so rows never shift.
+    scale: pressed ? 0.98 : 1.0
+    Behavior on scale {
+        NumberAnimation {
+            duration: Theme.reducedMotion ? 0 : 90
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Keys.onReturnPressed: if (root.enabled) root.clicked()
+    Keys.onEnterPressed: if (root.enabled) root.clicked()
 
     background: Rectangle {
         radius: root.small ? Theme.radiusXs : Theme.radiusSm
@@ -43,10 +56,13 @@ Button {
             if (root._ghost || root._link) return root.hovered ? Theme.surfaceAlt : "transparent"
             return root.hovered ? Theme.surfaceRaised : Theme.surfaceAlt
         }
-        border.width: root._bordered || root._danger ? 1 : 0
-        border.color: root._danger
-                      ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.35)
-                      : Theme.border
+        // The keyboard focus ring is a 2 px accent border; it has to win over
+        // the resting border so tabbing is always visible.
+        border.width: root.activeFocus ? 2 : (root._bordered || root._danger ? 1 : 0)
+        border.color: root.activeFocus ? Theme.accentLine
+                      : root._danger
+                        ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.35)
+                        : Theme.border
         Behavior on color { ColorAnimation { duration: Theme.reducedMotion ? 0 : 120 } }
     }
 

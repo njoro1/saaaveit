@@ -18,6 +18,7 @@ ComboBox {
     height: compact ? Theme.controlHeightSmall : Theme.controlHeight
     leftPadding: 10
     rightPadding: 26
+    activeFocusOnTab: true
 
     Accessible.role: Accessible.ComboBox
     Accessible.name: root.label !== "" ? root.label : root.displayText
@@ -36,7 +37,7 @@ ComboBox {
         implicitHeight: root.height
         radius: Theme.radiusSm
         color: Theme.inset
-        border.width: 1
+        border.width: root.activeFocus ? 2 : 1
         border.color: root.activeFocus || root.popup.visible ? Theme.accentLine
                                                              : (root.hovered ? Theme.borderStrong : Theme.border)
     }

@@ -118,14 +118,21 @@ ApplicationWindow {
                 onOpenPalette: palette.open()
             }
 
-            StackLayout {
+            // The stack keeps every page alive; the wrapper only animates the
+            // reveal so navigation reads as a transition, not a repaint.
+            Item {
+                id: pageFrame
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                currentIndex: window.currentPage
 
-                DownloadPage {}
-                LibraryPage {}
-                SettingsPage {}
+                StackLayout {
+                    anchors.fill: parent
+                    currentIndex: window.currentPage
+
+                    DownloadPage {}
+                    LibraryPage {}
+                    SettingsPage {}
+                }
             }
         }
 
@@ -137,6 +144,25 @@ ApplicationWindow {
         anchors.fill: parent
         onNavigateRequested: function (index) { window.goTo(index) }
         onActionRequested: function (action) { window.runAction(action) }
+    }
+
+    // Page switch: the new page fades in over 160 ms. Reduced motion keeps the
+    // switch instant, and navigating to the same page never animates.
+    Connections {
+        target: window
+        function onCurrentPageChanged() {
+            pageFrame.opacity = 0
+            pageReveal.restart()
+        }
+    }
+
+    NumberAnimation {
+        id: pageReveal
+        target: pageFrame
+        property: "opacity"
+        to: 1
+        duration: Theme.reducedMotion ? 0 : 160
+        easing.type: Easing.OutCubic
     }
 
     onClosing: appBridge.saveWindowState(x + "," + y + "," + width + "," + height)

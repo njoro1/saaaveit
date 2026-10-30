@@ -17,6 +17,13 @@ Item {
     implicitHeight: Math.max(18, label.implicitHeight)
     opacity: enabled ? 1.0 : 0.45
     activeFocusOnTab: true
+    scale: switchMouse.pressed ? 0.97 : 1.0
+    Behavior on scale {
+        NumberAnimation {
+            duration: Theme.reducedMotion ? 0 : 90
+            easing.type: Easing.OutCubic
+        }
+    }
 
     function _toggle() {
         root.checked = !root.checked
@@ -54,7 +61,18 @@ Item {
         font.pixelSize: Theme.fontBody
     }
 
+    Rectangle {
+        anchors.fill: track
+        anchors.margins: -3
+        radius: 12
+        color: "transparent"
+        border.width: 2
+        border.color: Theme.accentLine
+        visible: root.activeFocus
+    }
+
     MouseArea {
+        id: switchMouse
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: root._toggle()
