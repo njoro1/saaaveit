@@ -27,16 +27,47 @@ Item {
         onAccepted: appBridge.setDownloadDir(selectedFolder)
     }
 
+    // The page title matches Library's; card headers stay well below it.
+    ColumnLayout {
+        id: pageHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Theme.lg
+        spacing: 2
+
+        Label {
+            objectName: "download.pageTitle"
+            text: "Download"
+            color: Theme.text
+            font.pixelSize: Theme.fontH1
+            font.bold: true
+        }
+
+        Label {
+            objectName: "download.pageSubtitle"
+            Layout.fillWidth: true
+            text: "Paste a video link, inspect the formats, then save exactly what you want."
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontSmall
+            elide: Text.ElideRight
+        }
+    }
+
     ScrollView {
         id: scroller
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: pageHeader.bottom
+        anchors.bottom: parent.bottom
+        anchors.margins: Theme.lg
+        anchors.topMargin: Theme.md
         clip: true
         contentWidth: availableWidth
 
         ColumnLayout {
             width: scroller.availableWidth
             spacing: Theme.md
-            anchors.margins: Theme.lg
 
             // ================================================== SOURCE
             AppCard {
@@ -122,7 +153,7 @@ Item {
                         visible: appBridge.hasInfo
                         text: appBridge.videoTitle
                         color: Theme.text
-                        font.pixelSize: Theme.fontLabel
+                        font.pixelSize: Theme.fontTitle
                         font.bold: true
                         wrapMode: Text.WordWrap
                     }
