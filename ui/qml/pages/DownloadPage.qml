@@ -101,10 +101,20 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         visible: appBridge.hasInfo
-                        spacing: Theme.sm
+                        spacing: Theme.md
+                        Layout.alignment: Qt.AlignTop
+
+                        MediaThumb {
+                            objectName: "download.mediaThumb"
+                            Layout.preferredWidth: page.wide ? 224 : 160
+                            Layout.alignment: Qt.AlignTop
+                            source: appBridge.videoThumbnail
+                            duration: appBridge.videoDuration
+                        }
 
                         ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignTop
                             spacing: 6
 
                             Label {
@@ -115,6 +125,16 @@ Item {
                                 font.pixelSize: Theme.fontH2
                                 font.bold: true
                                 wrapMode: Text.WordWrap
+                            }
+
+                            Label {
+                                objectName: "download.heroChannel"
+                                Layout.fillWidth: true
+                                visible: appBridge.videoChannel !== ""
+                                text: appBridge.videoChannel
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontSmall
+                                elide: Text.ElideRight
                             }
 
                             RowLayout {

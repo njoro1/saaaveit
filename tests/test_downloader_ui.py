@@ -145,6 +145,13 @@ class TestDownloadPage:
                      "download.subtitleOnlyButton", "download.folderLabel"):
             assert _find(ui.root, name) is not None
 
+    def test_hero_carries_the_media_identity(self, ui):
+        thumb = _find(ui.root, "download.mediaThumb")
+        assert thumb.property("source").toString() == ""
+        assert thumb.property("duration") == 0
+        assert _find(ui.root, "download.heroTitle").property("text") == "A test video"
+        assert _find(ui.root, "download.heroChannel").property("text") == ""
+
     def test_inspect_button_tracks_the_url(self, ui):
         button = _find(ui.root, "download.inspectButton")
         bridge = ui.bridge
