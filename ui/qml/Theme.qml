@@ -95,6 +95,36 @@ QtObject {
     readonly property color borderSoft: isDark ? "#212938" : "#E1E6F0"
     readonly property color borderStrong: isDark ? "#2E3749" : "#C6CEDE"
 
+    // --- Elevation --------------------------------------------------------
+    // Depth is a system value, not a per-component decision: cards may carry
+    // exactly one level-1 shadow, and only overlays (palette, dialogs, menus)
+    // may use level 3. Nothing else casts a shadow — a blur behind scrolling
+    // content costs a repaint per frame.
+    readonly property int elevationNone: 0
+    readonly property int elevationCard: 1
+    readonly property int elevationOverlay: 3
+
+    // Dark surfaces sit on a near-black page, so their shadows need more
+    // opacity to register; light surfaces need much less or the shadow reads
+    // as a second border.
+    readonly property color shadowColor: isDark ? "#000000" : "#0F172A"
+    readonly property real shadowOpacityCard: isDark ? 0.45 : 0.10
+    readonly property int shadowBlurCard: 14
+    readonly property int shadowYOffsetCard: 4
+    readonly property real shadowOpacityOverlay: isDark ? 0.55 : 0.18
+    readonly property int shadowBlurOverlay: 28
+    readonly property int shadowYOffsetOverlay: 10
+
+    function shadowFor(level) {
+        if (level >= elevationOverlay)
+            return { opacity: shadowOpacityOverlay, blur: shadowBlurOverlay,
+                     yOffset: shadowYOffsetOverlay }
+        if (level >= elevationCard)
+            return { opacity: shadowOpacityCard, blur: shadowBlurCard,
+                     yOffset: shadowYOffsetCard }
+        return { opacity: 0, blur: 0, yOffset: 0 }
+    }
+
     // --- Text -------------------------------------------------------------
     // Three steps of the same ramp. All three are read as running text, so all
     // three clear AA (4.5:1) on the *lightest* surface they can land on —
