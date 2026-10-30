@@ -74,11 +74,10 @@ Rectangle {
                 spacing: 9
 
                 Label {
-                    text: root.title.toUpperCase()
-                    color: Theme.textDim
-                    font.pixelSize: Theme.fontSmall
-                    font.bold: true
-                    font.letterSpacing: 0.9
+                    text: root.title
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSmall + 1
+                    font.weight: Font.DemiBold
                 }
 
                 Label {
