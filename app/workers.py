@@ -13,6 +13,8 @@ from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
 from src import media_source
 
+from app.thumbnail import cache_thumbnail
+
 
 class InfoSignal(QObject):
     done = Signal(str)
@@ -37,6 +39,11 @@ class InfoWorker(QRunnable):
     def run(self) -> None:
         try:
             info = media_source.inspect_video(self.url)
+            # QML cannot load remote images in the frozen build, so hand it a
+            # cached local file instead ("" when the fetch fails).
+            info["thumbnail"] = cache_thumbnail(
+                str(info.get("video_id") or ""), str(info.get("thumbnail") or "")
+            )
             self.signals.done.emit(f"INFO:{self.token}|" + json.dumps(info))
         except Exception as exc:  # noqa: BLE001 - surfaced to the user
             self.signals.done.emit(f"INFOERROR:{self.token}|{exc}")
