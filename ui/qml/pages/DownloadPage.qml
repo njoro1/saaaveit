@@ -76,9 +76,7 @@ Item {
             // ================================================== SOURCE
             AppCard {
                 Layout.fillWidth: true
-                title: "Source"
-                stepNumber: 1
-                active: appBridge.url !== ""
+                title: "Video"
                 note: appBridge.hasInfo ? appBridge.videoTitle : ""
 
                 headerExtra: [
@@ -176,9 +174,7 @@ Item {
             // ================================================== FORMAT
             AppCard {
                 Layout.fillWidth: true
-                title: "Video format"
-                stepNumber: 2
-                active: page.hasSelection
+                title: "Format"
                 note: appBridge.infoLoading ? "Inspecting…" : (appBridge.hasInfo ? "Pick the exact stream you want" : "")
 
                 ColumnLayout {
@@ -272,9 +268,7 @@ Item {
             // ============================================== SUBTITLE TRACK
             AppCard {
                 Layout.fillWidth: true
-                title: "Subtitle track"
-                stepNumber: 3
-                active: appBridge.selectedSubtitleTrack !== ""
+                title: "Subtitle"
                 note: appBridge.hasInfo
                       ? (appBridge.hasSubtitleTracks
                          ? "Downloaded together with the video"
@@ -313,9 +307,7 @@ Item {
             // ================================================== DOWNLOAD
             AppCard {
                 Layout.fillWidth: true
-                title: "Download"
-                stepNumber: 4
-                active: page.busy
+                title: "Save"
 
                 headerExtra: [
                     AppButton {

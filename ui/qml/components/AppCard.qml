@@ -3,11 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// Card with an optional header band (step number + uppercase title + right-hand
-// chips) and a default content slot.
+// Card with an optional header band (uppercase title + right-hand chips) and a
+// default content slot.
 //
 //   AppCard {
-//       title: "Source"; stepNumber: 1; active: true
+//       title: "Video"; note: "How the app renders offline"
 //       headerExtra: [ Chip { text: "Saaave"; tone: "acc" } ]
 //       ColumnLayout { ... }        // <- default content
 //   }
@@ -18,9 +18,7 @@ Rectangle {
     property alias headerExtra: headerExtraRow.data
 
     property string title: ""
-    property int stepNumber: 0
     property string note: ""
-    property bool active: false
     property bool tight: false
     property int padding: tight ? Theme.md : 15
 
@@ -74,24 +72,6 @@ Rectangle {
                 anchors.leftMargin: 15
                 anchors.rightMargin: 15
                 spacing: 9
-
-                Rectangle {
-                    visible: root.stepNumber > 0
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    radius: 5
-                    color: root.active ? Theme.accent : Theme.surfaceRaised
-
-                    Label {
-                        anchors.centerIn: parent
-                        text: String(root.stepNumber)
-                        color: root.active ? Theme.accentInk : Theme.textMuted
-                        font.pixelSize: Theme.fontTiny
-                        font.family: Theme.monoFont
-                        font.bold: true
-                    }
-                    Accessible.ignored: true
-                }
 
                 Label {
                     text: root.title.toUpperCase()
