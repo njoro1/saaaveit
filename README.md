@@ -26,6 +26,7 @@ process with any other application.
 * `pip install -r requirements.txt`
 * `ffmpeg` — `imageio-ffmpeg` provides one; alternatively put `ffmpeg.exe` on
   `PATH`. Without it, separate video and audio streams cannot be merged.
+* For the test suite: `pip install -r requirements-dev.txt`
 
 ## Run
 
@@ -76,5 +77,9 @@ tests/           pytest suite
 ## Tests
 
 ```
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
+
+The QML tests run the real `Main.qml` against the real bridge with
+`QT_QPA_PLATFORM=offscreen`, so no window appears and no network is used.

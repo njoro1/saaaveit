@@ -52,8 +52,19 @@ def _initial_url(argv: list[str]) -> str:
     return ""
 
 
+def _pin_style() -> None:
+    """Force the Basic controls style, ignoring the environment.
+
+    Every custom component in ``ui/qml/components`` replaces ``background`` or
+    ``contentItem``. The native Windows and Fusion styles silently refuse those
+    overrides, so an inherited ``QT_QUICK_CONTROLS_STYLE`` from the shell would
+    change how the entire app renders. ``setdefault`` is not enough here.
+    """
+    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+
+
 def main() -> int:
-    os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+    _pin_style()
 
     logger = setup_logging(base_dir())
     logger.info(

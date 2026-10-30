@@ -980,8 +980,13 @@ class DownloaderBridge(QObject):
         if kind in self._pending:
             self._pending.remove(kind)
 
-        cancelled = payload.startswith("YTCANCEL:")
-        failed = payload.startswith("YTERROR:")
+        # DownloadWorker emits ``DONE:`` / ``CANCEL:`` / ``ERROR:``; the prefix
+        # is everything before the token. Read it instead of hard-coding a name:
+        # a mismatched prefix made every failed leg report "ok" and recorded the
+        # exception text as a saved file path.
+        status_prefix = payload.split("|", 1)[0].split(":", 1)[0]
+        cancelled = status_prefix == "CANCEL"
+        failed = status_prefix == "ERROR"
         if kind == "video":
             if cancelled:
                 self._video_outcome = "cancelled"

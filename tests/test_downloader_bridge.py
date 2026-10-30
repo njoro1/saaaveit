@@ -56,10 +56,23 @@ def _install(bridge, payload) -> None:
     bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(payload))
 
 
+def _set_url(bridge, url: str) -> None:
+    """Assign the URL without letting the setter start a real inspection.
+
+    ``DownloaderBridge.url`` calls ``inspect()`` for any non-empty value, which
+    spawns a worker that reaches the network. Tests feed synthetic ``INFO:``
+    payloads instead, so the setter must be bypassed — otherwise a failing live
+    request races the assertions (and, once the bridge is gone, aborts the run
+    with ``RuntimeError: Signal source has been deleted``).
+    """
+    bridge._url = url
+    bridge._notify_form_changed()
+
+
 @pytest.fixture()
 def ready(bridge, tmp_path, monkeypatch):
     """A bridge with a URL, an inspected video and a writable temp output dir."""
-    bridge.url = "https://example.com/video?v=dQw4w9WgXcQ"
+    _set_url(bridge, "https://example.com/video?v=dQw4w9WgXcQ")
     bridge._download_dir = str(tmp_path)
     _install(bridge, _payload())
     monkeypatch.setattr(media_source, "probe_video_file", lambda path: {})
@@ -241,7 +254,7 @@ class TestCancel:
 
 class TestValidation:
     def test_download_without_a_selection_is_refused(self, bridge, tmp_path):
-        bridge.url = "https://example.it/video?v=dQw4w9WgXcQ"
+        _set_url(bridge, "https://example.it/video?v=dQw4w9WgXcQ")
         bridge._download_dir = str(tmp_path)
         bridge.download()
         assert bridge.downloadRunning is False

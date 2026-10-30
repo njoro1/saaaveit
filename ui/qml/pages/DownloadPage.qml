@@ -97,6 +97,15 @@ Item {
                             enabled: !page.busy && appBridge.url !== ""
                             onClicked: appBridge.clearSource()
                         }
+
+                        AppButton {
+                            objectName: "download.inspectButton"
+                            text: appBridge.infoLoading ? "Inspecting…" : "Inspect"
+                            variant: "primary"
+                            iconName: "search"
+                            enabled: !page.busy && !appBridge.infoLoading && appBridge.url !== ""
+                            onClicked: appBridge.inspect()
+                        }
                     }
 
                     Label {

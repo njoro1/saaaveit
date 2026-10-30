@@ -51,7 +51,10 @@ def _info_payload() -> dict:
 @pytest.fixture(scope="module")
 def ui(qml_main):
     bridge = qml_main.bridge
-    bridge.url = "https://example.com/video?v=dQw4w9WgXcQ"
+    # Bypass the ``url`` setter: it auto-inspects over the network. The payload
+    # below is synthetic, so no live request should ever start.
+    bridge._url = "https://example.com/video?v=dQw4w9WgXcQ"
+    bridge._notify_form_changed()
     bridge._info_gen += 1
     bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(_info_payload()))
     qml_main.warnings.clear()
@@ -84,6 +87,15 @@ class TestShell:
         assert ui.root is not None
         assert ui.warnings == [], ui.warnings
 
+    def test_style_pin_overrides_the_environment(self, monkeypatch):
+        import main
+
+        monkeypatch.setenv("QT_QUICK_CONTROLS_STYLE", "Fusion")
+        main._pin_style()
+        import os
+
+        assert os.environ["QT_QUICK_CONTROLS_STYLE"] == "Basic"
+
     def test_all_three_pages_exist(self, ui):
         names = ["downloadPage", "libraryPage", "settingsPage"]
         for name in names:
@@ -110,6 +122,21 @@ class TestDownloadPage:
                      "download.downloadButton", "download.cancelButton",
                      "download.subtitleOnlyButton", "download.folderLabel"):
             assert _find(ui.root, name) is not None
+
+    def test_inspect_button_tracks_the_url(self, ui):
+        button = _find(ui.root, "download.inspectButton")
+        bridge = ui.bridge
+        saved = bridge.url
+        try:
+            bridge._url = ""
+            bridge._notify_form_changed()
+            assert button.property("enabled") is False
+            bridge._url = saved
+            bridge._notify_form_changed()
+            assert button.property("enabled") is True
+        finally:
+            bridge._url = saved
+            bridge._notify_form_changed()
 
     def test_stage_and_progress_are_rendered(self, ui):
         stage = _find(ui.root, "download.stageLabel")
