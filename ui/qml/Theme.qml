@@ -222,6 +222,8 @@ QtObject {
     readonly property int topbarHeight: 56
     readonly property int railWidth: 64
     readonly property int statusbarHeight: 30
+    // Content stops growing past this width so long rows stay readable.
+    readonly property int contentMaxWidth: 1120
     // Legacy alias.
     readonly property int headerHeight: topbarHeight
 

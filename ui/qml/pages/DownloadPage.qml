@@ -14,6 +14,7 @@ Item {
 
     readonly property bool busy: appBridge.downloadRunning
     readonly property bool hasSelection: !!appBridge.selectedOption.format_selector
+    readonly property bool wide: page.width >= 1280
 
     function humanSize(bytes) {
         if (!bytes || bytes <= 0)
@@ -59,23 +60,36 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: pageHeader.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: actionBar.top
         anchors.margins: Theme.lg
         anchors.topMargin: Theme.md
+        anchors.bottomMargin: Theme.sm
         clip: true
         contentWidth: availableWidth
 
         ColumnLayout {
-            x: Theme.xs
-            width: scroller.availableWidth - Theme.xs * 2
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(Theme.contentMaxWidth,
+                            scroller.availableWidth - Theme.xs * 2)
             spacing: Theme.md
 
             // Room for the card shadow inside the clipped scroll area.
             Item { Layout.preferredHeight: Theme.xs }
 
+            GridLayout {
+                id: cardGrid
+                Layout.fillWidth: true
+                // Top-to-bottom flow puts Video/Format in the left column and
+                // Subtitle/Save in the right one; one column below the breakpoint.
+                rows: page.wide ? 2 : 4
+                flow: GridLayout.TopToBottom
+                columnSpacing: Theme.md
+                rowSpacing: Theme.md
+
             // ================================================== SOURCE
             AppCard {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
                 title: "Video"
 
                 ColumnLayout {
@@ -198,6 +212,7 @@ Item {
             // ================================================== FORMAT
             AppCard {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
                 title: "Format"
                 note: appBridge.infoLoading ? "Inspecting…" : (appBridge.hasInfo ? "Pick the exact stream you want" : "")
 
@@ -248,17 +263,17 @@ Item {
                         }
 
                         Item { Layout.fillWidth: true }
+                    }
 
-                        Label {
-                            objectName: "download.selectedSummary"
-                            visible: page.hasSelection
-                            text: "Selected: " + (appBridge.selectedFormatLabel || "stream")
-                                  + " · " + page.humanSize(appBridge.selectedFileSize)
-                            color: Theme.textDim
-                            font.pixelSize: Theme.fontSmall
-                            elide: Text.ElideRight
-                            Layout.maximumWidth: 320
-                        }
+                    Label {
+                        objectName: "download.selectedSummary"
+                        visible: page.hasSelection
+                        text: "Selected: " + (appBridge.selectedFormatLabel || "stream")
+                              + " · " + page.humanSize(appBridge.selectedFileSize)
+                        color: Theme.textDim
+                        font.pixelSize: Theme.fontSmall
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
 
                     Label {
@@ -292,6 +307,7 @@ Item {
             // ============================================== SUBTITLE TRACK
             AppCard {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
                 title: "Subtitle"
                 note: appBridge.hasInfo
                       ? (appBridge.hasSubtitleTracks
@@ -331,19 +347,8 @@ Item {
             // ================================================== DOWNLOAD
             AppCard {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
                 title: "Save"
-
-                headerExtra: [
-                    AppButton {
-                        objectName: "download.cancelButton"
-                        visible: page.busy
-                        text: "Cancel"
-                        variant: "danger"
-                        small: true
-                        iconName: "stop"
-                        onClicked: appBridge.cancelDownload()
-                    }
-                ]
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -434,15 +439,6 @@ Item {
                         spacing: Theme.sm
 
                         AppButton {
-                            objectName: "download.downloadButton"
-                            text: page.busy ? "Downloading…" : "Download"
-                            variant: "primary"
-                            iconName: "download"
-                            enabled: appBridge.canDownload
-                            onClicked: appBridge.download()
-                        }
-
-                        AppButton {
                             objectName: "download.resultVideoButton"
                             visible: appBridge.downloadedVideo !== ""
                             text: "Open video"
@@ -463,15 +459,6 @@ Item {
                         }
 
                         Item { Layout.fillWidth: true }
-
-                        Label {
-                            visible: appBridge.blockedReason !== ""
-                            text: appBridge.blockedReason
-                            color: Theme.warning
-                            font.pixelSize: Theme.fontSmall
-                            wrapMode: Text.WordWrap
-                            Layout.maximumWidth: 360
-                        }
                     }
 
                     // Outcomes are reported per leg: a failed video download
@@ -530,7 +517,71 @@ Item {
                 }
             }
 
+            }  // cardGrid
+
             Item { Layout.preferredHeight: Theme.md }
+        }
+    }
+
+    // D6: the primary action stays reachable without scrolling, at every
+    // window size. The Save card keeps destination, progress, and outcomes.
+    Item {
+        id: actionBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.lg
+        anchors.rightMargin: Theme.lg
+        height: actionRow.implicitHeight + Theme.sm * 2
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.background
+        }
+        Rectangle {
+            anchors.top: parent.top
+            width: parent.width
+            height: 1
+            color: Theme.borderSoft
+        }
+
+        RowLayout {
+            id: actionRow
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(Theme.contentMaxWidth,
+                            actionBar.width - Theme.xs * 2)
+            spacing: Theme.sm
+
+            AppButton {
+                objectName: "download.downloadButton"
+                text: page.busy ? "Downloading…" : "Download"
+                variant: "primary"
+                iconName: "download"
+                enabled: appBridge.canDownload
+                onClicked: appBridge.download()
+            }
+
+            AppButton {
+                objectName: "download.cancelButton"
+                visible: page.busy
+                text: "Cancel"
+                variant: "danger"
+                small: true
+                iconName: "stop"
+                onClicked: appBridge.cancelDownload()
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Label {
+                visible: appBridge.blockedReason !== ""
+                text: appBridge.blockedReason
+                color: Theme.warning
+                font.pixelSize: Theme.fontSmall
+                elide: Text.ElideRight
+                Layout.maximumWidth: 420
+            }
         }
     }
 }
