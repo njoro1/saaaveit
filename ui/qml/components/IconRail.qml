@@ -54,27 +54,18 @@ Rectangle {
                                        : (railMouse.containsMouse ? Theme.surfaceAlt : "transparent")
                 }
 
-                ColumnLayout {
+                Icon {
                     anchors.centerIn: parent
-                    spacing: 3
-
-                    Icon {
-                        Layout.alignment: Qt.AlignHCenter
-                        name: parent.parent.modelData.icon
-                        color: parent.parent.isOn ? Theme.accent : Theme.textMuted
-                        strokeWidth: 1.9
-                        Layout.preferredWidth: 20
-                        Layout.preferredHeight: 20
-                    }
-
-                    Label {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: parent.parent.modelData.label
-                        color: parent.parent.isOn ? Theme.accent : Theme.textMuted
-                        font.pixelSize: Theme.fontTiny
-                        font.bold: parent.parent.isOn
-                    }
+                    name: parent.modelData.icon
+                    color: parent.isOn ? Theme.accent : Theme.textMuted
+                    strokeWidth: 1.9
+                    width: 22
+                    height: 22
                 }
+
+                ToolTip.visible: railMouse.containsMouse
+                ToolTip.text: modelData.label
+                ToolTip.delay: 400
 
                 MouseArea {
                     id: railMouse
@@ -103,25 +94,17 @@ Rectangle {
                 color: paletteMouse.containsMouse ? Theme.surfaceAlt : "transparent"
             }
 
-            ColumnLayout {
+            Icon {
                 anchors.centerIn: parent
-                spacing: 3
-
-                Icon {
-                    Layout.alignment: Qt.AlignHCenter
-                    name: "keyboard"
-                    color: Theme.textMuted
-                    Layout.preferredWidth: 20
-                    Layout.preferredHeight: 20
-                }
-
-                Label {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "Ctrl K"
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontTiny
-                }
+                name: "keyboard"
+                color: Theme.textMuted
+                width: 22
+                height: 22
             }
+
+            ToolTip.visible: paletteMouse.containsMouse
+            ToolTip.text: "Command palette · Ctrl K"
+            ToolTip.delay: 400
 
             MouseArea {
                 id: paletteMouse
