@@ -176,6 +176,9 @@ class DownloaderBridge(QObject):
         self._title = ""
         self._video_id = ""
         self._language = ""
+        self._thumbnail = ""
+        self._duration = 0
+        self._uploader = ""
         self._codecs: list[str] = []
         self._resolutions: list[int] = []
         self._matrix: dict = {}
@@ -423,6 +426,9 @@ class DownloaderBridge(QObject):
         self._title = ""
         self._video_id = ""
         self._language = ""
+        self._thumbnail = ""
+        self._duration = 0
+        self._uploader = ""
         self._codecs = []
         self._resolutions = []
         self._matrix = {}
@@ -488,6 +494,12 @@ class DownloaderBridge(QObject):
         self._title = info.get("title") or ""
         self._video_id = info.get("video_id") or ""
         self._language = info.get("language") or ""
+        self._thumbnail = str(info.get("thumbnail") or "")
+        try:
+            self._duration = int(info.get("duration") or 0)
+        except (TypeError, ValueError):
+            self._duration = 0
+        self._uploader = str(info.get("uploader") or info.get("channel") or "")
         self._matrix = {
             cid: {int(h): opt for h, opt in (family or {}).items()}
             for cid, family in (info.get("matrix") or {}).items()
@@ -551,6 +563,18 @@ class DownloaderBridge(QObject):
     @Property(str, notify=inspectChanged)
     def videoId(self) -> str:
         return self._video_id
+
+    @Property(str, notify=inspectChanged)
+    def videoThumbnail(self) -> str:
+        return self._thumbnail
+
+    @Property(int, notify=inspectChanged)
+    def videoDuration(self) -> int:
+        return self._duration
+
+    @Property(str, notify=inspectChanged)
+    def videoChannel(self) -> str:
+        return self._uploader
 
     @Property(str, notify=inspectChanged)
     def sourceLanguage(self) -> str:

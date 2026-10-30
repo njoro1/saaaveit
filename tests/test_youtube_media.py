@@ -638,3 +638,37 @@ class TestPackagedFfmpegNaming:
 
         monkeypatch.setattr(_shutil, "copyfile", boom)
         assert media_source._ensure_ffmpeg_exe_named(str(odd)) == str(odd)
+
+
+class TestInspectVideoIdentity:
+    """T4.1: inspect_video() carries thumbnail, duration, and uploader."""
+
+    def _info(self, **extra) -> dict:
+        data = {"id": "abc12345678", "title": "T", "language": "ja",
+                "formats": _formats()}
+        data.update(extra)
+        return data
+
+    def test_exposes_thumbnail_duration_and_uploader(self, monkeypatch):
+        monkeypatch.setattr(media_source, "_yt_dlp_json", lambda url: self._info(
+            thumbnail="https://example.com/t.jpg",
+            duration=213.7,
+            uploader="Some Channel",
+        ))
+        result = media_source.inspect_video("https://example.com/v")
+        assert result["thumbnail"] == "https://example.com/t.jpg"
+        assert result["duration"] == 213
+        assert result["uploader"] == "Some Channel"
+
+    def test_channel_is_used_when_uploader_is_absent(self, monkeypatch):
+        monkeypatch.setattr(media_source, "_yt_dlp_json", lambda url: self._info(
+            channel="Fallback Channel"))
+        result = media_source.inspect_video("https://example.com/v")
+        assert result["uploader"] == "Fallback Channel"
+
+    def test_missing_identity_keys_are_safe(self, monkeypatch):
+        monkeypatch.setattr(media_source, "_yt_dlp_json", lambda url: self._info())
+        result = media_source.inspect_video("https://example.com/v")
+        assert result["thumbnail"] == ""
+        assert result["duration"] == 0
+        assert result["uploader"] == ""

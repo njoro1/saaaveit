@@ -634,6 +634,9 @@ def inspect_video(url: str) -> dict:
           "title": str,
           "video_id": str,
           "language": str,                          # service original language
+          "thumbnail": str,                         # remote URL, may be ""
+          "duration": int,                          # seconds, 0 when unknown
+          "uploader": str,                          # channel name, may be ""
           "codecs": [ "av1", "vp9", "h264" ],     # available, preference order
           "resolutions": [1080, 720, ...],          # available heights, desc
           "matrix": { cid: { height: {format_selector, filesize, ext,
@@ -650,6 +653,11 @@ def inspect_video(url: str) -> dict:
     formats = info.get("formats") or []
     codecs, resolutions, matrix, best = _build_matrix(formats)
 
+    try:
+        duration = int(info.get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+
     codecs_available = {
         "av1": "av1" in codecs,
         "vp9": "vp9" in codecs,
@@ -662,6 +670,9 @@ def inspect_video(url: str) -> dict:
         "title": title,
         "video_id": video_id,
         "language": str(info.get("language") or ""),
+        "thumbnail": str(info.get("thumbnail") or ""),
+        "duration": duration,
+        "uploader": str(info.get("uploader") or info.get("channel") or ""),
         "codecs": codecs,
         "resolutions": resolutions,
         "matrix": matrix,

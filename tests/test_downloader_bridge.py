@@ -339,3 +339,35 @@ class TestSettingsPersistence:
     def test_organisation_and_application_are_this_app_only(self):
         assert store.ORGANISATION == "Njoro"
         assert store.APPLICATION == "Saaaveit"
+
+
+class TestMediaIdentity:
+    """T4.1: thumbnail / duration / channel ride along with inspection."""
+
+    def test_properties_follow_the_payload(self, bridge):
+        payload = _payload()
+        payload.update(
+            thumbnail="https://example.com/t.jpg",
+            duration=125,
+            uploader="Some Channel",
+        )
+        _install(bridge, payload)
+        assert bridge.videoThumbnail == "https://example.com/t.jpg"
+        assert bridge.videoDuration == 125
+        assert bridge.videoChannel == "Some Channel"
+
+    def test_missing_keys_default_to_empty(self, bridge):
+        _install(bridge, _payload())
+        assert bridge.videoThumbnail == ""
+        assert bridge.videoDuration == 0
+        assert bridge.videoChannel == ""
+
+    def test_reset_clears_the_identity(self, bridge):
+        payload = _payload()
+        payload.update(thumbnail="https://example.com/t.jpg",
+                       duration=125, uploader="Some Channel")
+        _install(bridge, payload)
+        bridge._reset_inspection()
+        assert bridge.videoThumbnail == ""
+        assert bridge.videoDuration == 0
+        assert bridge.videoChannel == ""
