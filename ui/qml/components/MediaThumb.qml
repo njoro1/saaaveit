@@ -43,8 +43,8 @@ Rectangle {
             anchors.centerIn: parent
             name: "film"
             color: Theme.textMuted
-            width: 28
-            height: 28
+            width: Math.max(14, Math.min(28, Math.round(root.width * 0.28)))
+            height: width
             opacity: 0.9
         }
     }
@@ -65,7 +65,8 @@ Rectangle {
     Rectangle {
         id: pill
         objectName: "mediaThumb.durationPill"
-        visible: root.duration > 0
+        // Library slots are 64 px wide; a clock there would cover the image.
+        visible: root.duration > 0 && root.width >= 120
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 6

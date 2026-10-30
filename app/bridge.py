@@ -35,6 +35,7 @@ from src.store import DEFAULT_FILENAME_TEMPLATE
 from src.ytdlp import yt_dlp_available
 
 from .workers import DownloadWorker, InfoWorker
+from .thumbnail import cached_thumbnail
 
 APP_NAME = "Saaaveit"
 APP_VERSION = "1.0.0"
@@ -1117,6 +1118,7 @@ class DownloaderBridge(QObject):
             url=self.url,
             detail=detail,
             size=size,
+            duration=self._duration if kind == "video" else 0,
         )
         self._history = [e for e in self._history if e.get("path") != path]
         self._history.insert(0, entry)
@@ -1139,6 +1141,8 @@ class DownloaderBridge(QObject):
                 "sizeText": format_bytes(entry.get("size") or 0),
                 "when": entry.get("when") or "",
                 "exists": os.path.isfile(str(entry.get("path") or "")),
+                "thumbnail": cached_thumbnail(str(entry.get("videoId") or "")),
+                "duration": int(entry.get("duration") or 0),
                 "selected": index == self._selected_history,
             })
         return rows

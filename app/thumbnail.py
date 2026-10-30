@@ -69,6 +69,17 @@ def _prepare(data: bytes) -> QImage | None:
     return rounded
 
 
+def cached_thumbnail(video_id: str, cache_root: str | None = None) -> str:
+    """The local URL of an already-cached thumbnail, or ``""``. No network."""
+    safe_id = _SAFE_ID.sub("_", (video_id or "").strip())
+    if not safe_id:
+        return ""
+    target = os.path.join(thumbnail_dir(cache_root), safe_id + ".png")
+    if os.path.isfile(target) and os.path.getsize(target) > 0:
+        return QUrl.fromLocalFile(target).toString()
+    return ""
+
+
 def cache_thumbnail(
     video_id: str,
     remote_url: str,
@@ -85,8 +96,9 @@ def cache_thumbnail(
     directory = thumbnail_dir(cache_root)
     target = os.path.join(directory, safe_id + ".png")
 
-    if os.path.isfile(target) and os.path.getsize(target) > 0:
-        return QUrl.fromLocalFile(target).toString()
+    cached = cached_thumbnail(video_id, cache_root)
+    if cached:
+        return cached
 
     if not remote_url:
         return ""

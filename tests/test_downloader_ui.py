@@ -284,6 +284,9 @@ class TestLibraryPage:
             table = _find(ui.root, "library.table")
             assert table.property("count") >= 1
             assert bridge.history[0]["name"] == path.name
+            row = bridge.history[0]
+            assert row["detail"]  # format label, shown under the name
+            assert "thumbnail" in row and "duration" in row
         finally:
             bridge._history = [e for e in bridge._history if e["path"] != str(path)]
             bridge.historyChanged.emit()

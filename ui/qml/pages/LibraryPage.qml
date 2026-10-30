@@ -69,12 +69,11 @@ Item {
                     anchors.rightMargin: 10
                     spacing: Theme.sm
 
+                    Item { Layout.preferredWidth: 64 }
                     Label { Layout.fillWidth: true; text: "FILE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 70; text: "KIND"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 160; text: "FORMAT / TRACK"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
                     Label { Layout.preferredWidth: 70; text: "SIZE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
                     Label { Layout.preferredWidth: 120; text: "WHEN"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Item { Layout.preferredWidth: 180 }
+                    Item { Layout.preferredWidth: 108 }
                 }
             }
 
@@ -93,10 +92,9 @@ Item {
                     required property int index
 
                     width: list.width
-                    // The first cell can carry two lines (name + "missing from
-                    // disk"). A fixed 40px row let the second line bleed into
-                    // the row below once body text moved to 13px.
-                    height: Math.max(40, rowBody.implicitHeight + 12)
+                    // Two lines of text or the 36 px preview, whichever is taller.
+                    height: Math.max(Theme.rowHeight + Theme.xs * 3,
+                                     rowBody.implicitHeight + Theme.sm)
                     color: index === list.currentIndex ? Theme.accentSoft
                          : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
 
@@ -107,9 +105,18 @@ Item {
                         anchors.rightMargin: 10
                         spacing: Theme.sm
 
+                        MediaThumb {
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 36
+                            Layout.alignment: Qt.AlignVCenter
+                            source: row.modelData.thumbnail || ""
+                            duration: row.modelData.duration || 0
+                        }
+
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 0
+                            Layout.alignment: Qt.AlignVCenter
+                            spacing: 1
 
                             Label {
                                 Layout.fillWidth: true
@@ -120,32 +127,31 @@ Item {
                                 elide: Text.ElideMiddle
                             }
 
-                            Label {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                visible: !row.modelData.exists
-                                text: "missing from disk"
-                                color: Theme.warning
-                                font.pixelSize: Theme.fontTiny
+                                spacing: Theme.sm
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: row.modelData.detail !== ""
+                                    text: row.modelData.detail
+                                    color: Theme.textMuted
+                                    font.pixelSize: Theme.fontTiny
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    visible: !row.modelData.exists
+                                    text: "missing from disk"
+                                    color: Theme.warning
+                                    font.pixelSize: Theme.fontTiny
+                                }
                             }
                         }
 
                         Label {
                             Layout.preferredWidth: 70
-                            text: row.modelData.kindLabel
-                            color: row.modelData.kind === "video" ? Theme.accent : Theme.info
-                            font.pixelSize: Theme.fontSmall
-                        }
-
-                        Label {
-                            Layout.preferredWidth: 160
-                            text: row.modelData.detail
-                            color: Theme.textDim
-                            font.pixelSize: Theme.fontSmall
-                            elide: Text.ElideRight
-                        }
-
-                        Label {
-                            Layout.preferredWidth: 70
+                            Layout.alignment: Qt.AlignVCenter
                             text: row.modelData.sizeText
                             color: Theme.textDim
                             font.pixelSize: Theme.fontSmall
@@ -153,13 +159,15 @@ Item {
 
                         Label {
                             Layout.preferredWidth: 120
+                            Layout.alignment: Qt.AlignVCenter
                             text: row.modelData.when
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontSmall
                         }
 
                         RowLayout {
-                            Layout.preferredWidth: 180
+                            Layout.preferredWidth: 108
+                            Layout.alignment: Qt.AlignVCenter
                             spacing: 2
 
                             AppButton {
@@ -171,19 +179,36 @@ Item {
                             }
 
                             AppButton {
-                                text: "Folder"
+                                text: ""
+                                iconName: "folder"
                                 small: true
                                 variant: "ghost"
                                 enabled: row.modelData.exists
+                                Layout.preferredWidth: Theme.controlHeightSmall
+                                Accessible.name: "Open folder"
                                 onClicked: appBridge.openDownloadedFolder(row.modelData.index)
                             }
 
                             AppButton {
-                                text: "Copy path"
+                                id: moreButton
+                                text: ""
+                                iconName: "more"
                                 small: true
                                 variant: "ghost"
-                                onClicked: appBridge.copyDownloadPath(row.modelData.index)
+                                Layout.preferredWidth: Theme.controlHeightSmall
+                                Accessible.name: "More actions"
+                                onClicked: rowMenu.popup(moreButton)
                             }
+                        }
+                    }
+
+                    // Low-frequency action, so it lives behind the row's menu
+                    // instead of competing with Open/Folder for width.
+                    Menu {
+                        id: rowMenu
+                        MenuItem {
+                            text: "Copy path"
+                            onTriggered: appBridge.copyDownloadPath(row.modelData.index)
                         }
                     }
 

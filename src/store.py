@@ -63,6 +63,7 @@ def make_entry(
     url: str,
     detail: str,
     size: int,
+    duration: int = 0,
 ) -> dict:
     """A history row for one downloaded file."""
     return {
@@ -73,6 +74,7 @@ def make_entry(
         "url": url,
         "detail": detail,
         "size": int(size or 0),
+        "duration": int(duration or 0),
         "when": time.strftime("%Y-%m-%d %H:%M"),
         "timestamp": time.time(),
     }
