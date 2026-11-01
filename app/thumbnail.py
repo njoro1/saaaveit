@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import urllib.parse
 import urllib.request
 
 from PySide6.QtCore import QRectF, QStandardPaths, Qt, QUrl
@@ -22,11 +23,15 @@ from PySide6.QtGui import QImage, QPainter, QPainterPath
 
 _MAX_BYTES = 5 * 1024 * 1024
 _MAX_WIDTH = 640
+# Byte size is capped, so a compressed bomb still has to survive the decode.
+# No thumbnail service ships anything near this; 40 MP is a generous ceiling.
+_MAX_PIXELS = 40_000_000
 # Matches Theme.radiusMd (10 px) when a 640 px image is shown at the 224 px
 # hero width; smaller slots scale the corner down with the image.
 _RADIUS_RATIO = 0.045
 _TIMEOUT_SECONDS = 6
 _SAFE_ID = re.compile(r"[^A-Za-z0-9_-]")
+_SCHEMES = ("http", "https")
 
 
 def thumbnail_dir(cache_root: str | None = None) -> str:
@@ -37,11 +42,18 @@ def thumbnail_dir(cache_root: str | None = None) -> str:
 
 
 def _prepare(data: bytes) -> QImage | None:
-    """Decode, crop to 16:9, downscale and round the corners of a thumbnail."""
+    """Decode, downscale, crop to 16:9 and round the corners of a thumbnail."""
     image = QImage.fromData(data)
     if image.isNull():
         return None
+    if image.width() * image.height() > _MAX_PIXELS:
+        return None
     image = image.convertToFormat(QImage.Format_ARGB32)
+
+    # Shrink before cropping: cropping first copied a second full-resolution
+    # buffer for pixels the downscale was going to discard anyway.
+    if image.width() > _MAX_WIDTH:
+        image = image.scaledToWidth(_MAX_WIDTH, Qt.SmoothTransformation)
 
     width, height = image.width(), image.height()
     if width * 9 != height * 16 and width and height:
@@ -51,8 +63,6 @@ def _prepare(data: bytes) -> QImage | None:
         else:  # taller than 16:9: trim top and bottom (letterboxed thumbs)
             crop_h = max(1, width * 9 // 16)
             image = image.copy(0, (height - crop_h) // 2, width, crop_h)
-    if image.width() > _MAX_WIDTH:
-        image = image.scaledToWidth(_MAX_WIDTH, Qt.SmoothTransformation)
 
     rounded = QImage(image.size(), QImage.Format_ARGB32)
     rounded.fill(Qt.transparent)
@@ -101,6 +111,12 @@ def cache_thumbnail(
         return cached
 
     if not remote_url:
+        return ""
+
+    # The URL comes out of extractor metadata, not from a site we control the
+    # bytes of. ``urlopen`` happily reads ``file:`` and ``ftp:``, which would put
+    # an arbitrary local file's pixels into the cache; only web schemes are ours.
+    if urllib.parse.urlsplit(remote_url).scheme.lower() not in _SCHEMES:
         return ""
 
     try:

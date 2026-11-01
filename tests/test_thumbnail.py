@@ -135,6 +135,29 @@ def test_a_missing_remote_url_is_refused(tmp_path, monkeypatch):
     assert seen == []
 
 
+@pytest.mark.parametrize("url", [
+    QUrl.fromLocalFile(os.path.abspath(__file__)).toString(),  # file:///...
+    "ftp://img.example/thumb.jpg",
+    "file:///C:/Users/victim/notes.txt",
+    __file__.replace("\\", "/"),
+])
+def test_only_web_schemes_are_fetched(tmp_path, monkeypatch, url):
+    """Metadata is not ours to trust; ``urlopen`` would read local files too."""
+    seen = _calls(monkeypatch, _Response(_png()))
+    assert thumbnail.cache_thumbnail("abc123", url, str(tmp_path)) == ""
+    assert seen == []
+    assert not os.path.exists(_cached(tmp_path))
+
+
+def test_absurd_decoded_dimensions_are_rejected(tmp_path, monkeypatch):
+    """The byte cap alone does not bound the decode: a few KB can be 20 MP."""
+    monkeypatch.setattr(thumbnail, "_MAX_PIXELS", 1000)
+    payload = _png(640, 360)
+    _calls(monkeypatch, _Response(payload))
+    assert thumbnail.cache_thumbnail("abc123", "https://img.example/t.jpg", str(tmp_path)) == ""
+    assert not os.path.exists(_cached(tmp_path))
+
+
 def test_a_declared_oversized_thumbnail_is_rejected_without_downloading(tmp_path, monkeypatch):
     response = _Response(_png(), length=6 * 1024 * 1024)
     _calls(monkeypatch, response)
