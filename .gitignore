@@ -18,6 +18,9 @@ reproduce.py.bak
 # Generated screenshots (tools/screenshot.py)
 shots/
 
+# Agent-local session files
+.qoder/
+
 # OS
 Thumbs.db
 desktop.ini
