@@ -33,12 +33,19 @@ Rectangle {
         // page has its own H1; repeating either here would double the chrome
         // (T6.5). The bar keeps the current video as context.
         Label {
+            id: headlineLabel
+            objectName: "chrome.headline"
             visible: root.headline !== ""
-            Layout.maximumWidth: 520
             text: root.headline
             color: Theme.textDim
             font.pixelSize: Theme.fontSmall
             elide: Text.ElideMiddle
+            // Same class as the blocked reason: a non-filling Layout item is
+            // sized to its preferred width and then simply overflows the bar,
+            // so a long video title walks over the buttons on its right.
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.maximumWidth: 520
         }
 
         Item { Layout.fillWidth: true }

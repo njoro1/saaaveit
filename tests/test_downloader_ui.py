@@ -304,6 +304,61 @@ class TestDownloadPage:
         assert ui.bridge.canDownload is True
         assert button.property("enabled") is True
 
+    def test_a_long_blocked_reason_elides_instead_of_overflowing_the_bar(self, ui):
+        """Review F8: a non-filling Layout item is sized to its preferred width.
+
+        Which is the whole implicit width, ellipsis or no ellipsis - so a long
+        reason ran off the right edge of the action bar instead of eliding. The
+        reason is derived from the readiness list and cannot be injected through
+        the bridge, so the label's own text is set: that is what the layout sees.
+        """
+        app = QGuiApplication.instance()
+        label = _find_item(ui.root, "download.blockedReason")
+        row = label.parentItem()
+        saved = (ui.root.property("width"), ui.root.property("height"),
+                 label.property("text"), label.property("visible"))
+        try:
+            label.setProperty("text", "Pick " + " ".join(["a long reason"] * 20))
+            label.setProperty("visible", True)
+            ui.root.resize(560, 700)
+            app.processEvents()
+
+            implicit = float(label.property("implicitWidth"))
+            width = float(label.property("width"))
+            right = float(label.property("x")) + width
+            assert width < implicit, f"label kept its implicit width: {width} of {implicit}"
+            assert right <= float(row.property("width")) + 1.0, (
+                f"the row is {row.property('width')} wide, the reason ends at {right}")
+        finally:
+            ui.root.resize(saved[0], saved[1])
+            label.setProperty("text", saved[2])
+            label.setProperty("visible", saved[3])
+            app.processEvents()
+
+    def test_a_long_headline_stays_inside_the_bar(self, ui):
+        """Review F8 again, at the other capped label in the shell."""
+        app = QGuiApplication.instance()
+        label = _find_item(ui.root, "chrome.headline")
+        row = label.parentItem()
+        saved = (ui.root.property("width"), ui.root.property("height"),
+                 label.property("visible"), label.property("text"))
+        try:
+            label.setProperty("visible", True)
+            label.setProperty("text", " ".join(["a long inspecting title"] * 25))
+            ui.root.resize(560, 700)
+            app.processEvents()
+
+            width = float(label.property("width"))
+            assert width <= float(label.property("implicitWidth"))
+            assert float(label.property("x")) + width <= float(row.property("width")) + 1.0, (
+                f"the bar is {row.property('width')} wide and the headline ends at "
+                f"{float(label.property('x')) + width}")
+        finally:
+            ui.root.resize(saved[0], saved[1])
+            label.setProperty("visible", saved[2])
+            label.setProperty("text", saved[3])
+            app.processEvents()
+
     def test_download_button_is_disabled_without_a_selection(self, ui):
         bridge = ui.bridge
         saved = bridge.selectedResolution

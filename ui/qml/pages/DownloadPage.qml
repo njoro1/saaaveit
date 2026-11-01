@@ -709,11 +709,18 @@ Item {
             Item { Layout.fillWidth: true }
 
             Label {
+                objectName: "download.blockedReason"
                 visible: appBridge.blockedReason !== ""
                 text: appBridge.blockedReason
                 color: Theme.warning
                 font.pixelSize: Theme.fontSmall
                 elide: Text.ElideRight
+                // A Layout sizes a non-filling item to its preferred width and
+                // lets it overflow the row; minimumWidth alone would not help.
+                // fillWidth makes it take part in the squeeze - and 420 px is a
+                // ceiling, not a demand.
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.maximumWidth: 420
             }
         }
