@@ -61,6 +61,39 @@ def contrast(fg: str, bg: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def _blend(fg_hex: str, alpha: float, bg_hex: str) -> tuple[float, float, float]:
+    """``fg`` at ``alpha`` over ``bg``, the way Qt composites: in sRGB space."""
+    return tuple(alpha * f + (1.0 - alpha) * b
+                 for f, b in zip(_rgb(fg_hex), _rgb(bg_hex)))
+
+
+def _ratio(fg: tuple[float, float, float], bg: tuple[float, float, float]) -> float:
+    def channel(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    l1 = 0.2126 * channel(fg[0]) + 0.7152 * channel(fg[1]) + 0.0722 * channel(fg[2])
+    l2 = 0.2126 * channel(bg[0]) + 0.7152 * channel(bg[1]) + 0.0722 * channel(bg[2])
+    lighter, darker = max(l1, l2), min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+_TINT_ALPHA = re.compile(
+    r'readonly property color (\w*Tint\w*|accentSoft):\s*'
+    r'Qt\.rgba\(([\w.]+),\s*[\w.]+,\s*[\w.]+,\s*isDark\s*\?\s*([0-9.]+)\s*:\s*([0-9.]+)\)'
+)
+
+
+def _tints() -> dict[str, tuple[str, float, float]]:
+    """tint token -> (colour it tints, dark alpha, light alpha).
+
+    Read from ``Theme.qml`` rather than hard-coded: a tint becoming more
+    generous is exactly the change that would quietly break the label on it.
+    """
+    text = THEME.read_text(encoding="utf-8")
+    return {m.group(1): (m.group(2), float(m.group(3)), float(m.group(4)))
+            for m in _TINT_ALPHA.finditer(text)}
+
+
 T = _tokens()
 
 
@@ -146,3 +179,89 @@ def test_borders_register_against_the_surface(token: str) -> None:
         f"{token} on surface (dark): {ratio_dark:.2f}:1 < 1.2:1")
     assert ratio_light >= 1.2, (
         f"{token} on surface (light): {ratio_light:.2f}:1 < 1.2:1")
+
+
+# --- The tinted surfaces -------------------------------------------------------
+# Every check above compares two opaque hexes. Half the app paints a *translucent*
+# fill instead: `accentSoft` marks the selected row of a table, a combo or the
+# palette, and `toneTint` is the background of a status chip. The colour that
+# actually sits under the label is that blend, and a tint of a colour is always
+# nearer that colour than the surface it tints — so every ratio here is worse
+# than the opaque one it replaces. (Review F7.)
+
+_TINTED_TOKENS = ("text", "textDim")
+
+
+def _accents_by_theme() -> tuple[dict[str, str], dict[str, str]]:
+    accents = _accents()
+    return ({k: v[0] for k, v in accents.items()},
+            {k: v[1] for k, v in accents.items()})
+
+
+def test_accent_soft_is_reachable():
+    """Guard for the parser below: the tint tokens must be found at all."""
+    tints = _tints()
+    assert {"accentSoft", "successTint", "warningTint", "errorTint", "infoTint"} <= set(tints)
+
+
+@pytest.mark.parametrize("token", _TINTED_TOKENS)
+def test_running_text_clears_aa_on_an_accent_tint(token: str) -> None:
+    """Selected rows are the app's most common tint — text must survive them."""
+    dark_accents, light_accents = _accents_by_theme()
+    _, soft_dark, soft_light = _tints()["accentSoft"]
+    text_dark, text_light = _pair(token)
+    for surface in _SURFACES:
+        s_dark, s_light = _pair(surface)
+        for name, hex_dark in dark_accents.items():
+            bg = _blend(hex_dark, soft_dark, s_dark)
+            ratio = _ratio(_rgb(text_dark), bg)
+            assert ratio >= 4.5, (
+                f"{token} on {name}'s accentSoft over {surface} (dark): {ratio:.2f}:1 < 4.5:1")
+        for name, hex_light in light_accents.items():
+            bg = _blend(hex_light, soft_light, s_light)
+            ratio = _ratio(_rgb(text_light), bg)
+            assert ratio >= 4.5, (
+                f"{token} on {name}'s accentSoft over {surface} (light): {ratio:.2f}:1 < 4.5:1")
+
+
+@pytest.mark.parametrize("token", _STATUS_TOKENS)
+def test_status_colour_clears_aa_on_its_own_tint(token: str) -> None:
+    """``Chip`` paints `toneTint(tone)` behind a label in `tone`.
+
+    The opaque check above is not enough: the chip's own tint is the surface
+    the words actually sit on.
+    """
+    dark_hex, light_hex = _pair(token)
+    _, alpha_dark, alpha_light = _tints()[token + "Tint"]
+    for surface in _SURFACES:
+        s_dark, s_light = _pair(surface)
+        ratio_dark = _ratio(_rgb(dark_hex), _blend(dark_hex, alpha_dark, s_dark))
+        ratio_light = _ratio(_rgb(light_hex), _blend(light_hex, alpha_light, s_light))
+        assert ratio_dark >= 4.5, (
+            f"{token} on {token}Tint over {surface} (dark): {ratio_dark:.2f}:1 < 4.5:1")
+        assert ratio_light >= 4.5, (
+            f"{token} on {token}Tint over {surface} (light): {ratio_light:.2f}:1 < 4.5:1")
+
+
+def test_accent_on_its_own_tint_is_a_shape_not_a_word():
+    """Why the two tests above exist.
+
+    Raw accent over its own tint clears the 3:1 that WCAG 1.4.11 asks of a
+    graphic — a selection dot, a chevron, a rail icon — but never the 4.5 a
+    word needs. So `Theme.accent` is legal as a fill and illegal as `color:`
+    on a tinted row, and this floor is what keeps the fill honest.
+    """
+    dark_accents, light_accents = _accents_by_theme()
+    _, soft_dark, soft_light = _tints()["accentSoft"]
+    for name, hex_dark in dark_accents.items():
+        for surface in _SURFACES:
+            s_dark = _pair(surface)[0]
+            ratio = _ratio(_rgb(hex_dark), _blend(hex_dark, soft_dark, s_dark))
+            assert ratio >= 3.0, (
+                f"{name} on its own accentSoft over {surface} (dark): {ratio:.2f}:1 < 3:1")
+    for name, hex_light in light_accents.items():
+        for surface in _SURFACES:
+            s_light = _pair(surface)[1]
+            ratio = _ratio(_rgb(hex_light), _blend(hex_light, soft_light, s_light))
+            assert ratio >= 3.0, (
+                f"{name} on its own accentSoft over {surface} (light): {ratio:.2f}:1 < 3:1")

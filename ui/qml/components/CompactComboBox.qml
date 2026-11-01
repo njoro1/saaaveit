@@ -79,8 +79,11 @@ ComboBox {
 
         contentItem: Label {
             text: itemDelegate.text
-            color: itemDelegate.isCurrent ? Theme.accent
+            // The stored row is marked by weight over its tint; accent would
+            // only measure ~3.6:1 there, which fails running text.
+            color: itemDelegate.isCurrent ? Theme.text
                  : (itemDelegate.highlighted || itemDelegate.hovered) ? Theme.text : Theme.textDim
+            font.bold: itemDelegate.isCurrent
             font.pixelSize: Theme.fontBody
             verticalAlignment: Text.AlignVCenter
             leftPadding: 8

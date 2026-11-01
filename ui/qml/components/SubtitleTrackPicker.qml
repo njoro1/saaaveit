@@ -128,7 +128,9 @@ ColumnLayout {
             Label {
                 visible: !!(engItem.track && engItem.track.isOriginal)
                 text: "original"
-                color: Theme.textMuted
+                // This row tints when selected, and the muted step is 3.6:1 on
+                // a tint; textDim keeps the tag readable in that state.
+                color: Theme.textDim
                 font.pixelSize: Theme.fontTiny
             }
         }

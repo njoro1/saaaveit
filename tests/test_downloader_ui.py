@@ -670,6 +670,39 @@ class TestMediaThumb:
         assert label.property("text") == "1:35"
 
 
+class TestAccentIsNotText:
+    """Review F7: raw accent clears 3:1 on its own tint and 4.5 nowhere near it.
+
+    So ``Theme.accent`` may fill a shape (selection dot, rail icon, radio ring)
+    but may not be a word's colour where a tint can appear behind it. Checked by
+    element: the block a ``color:`` line belongs to decides whether it is text.
+    """
+
+    SHAPES = {"Icon", "Rectangle", "Circle"}
+    TEXT = re.compile(r'(?<![.\w])color:\s*(?!.*rgba)(?!.*(accentLine|accentSoft|accentInk))'
+                      r'[^\n]*\bTheme\.accent\b')
+    OPENER = re.compile(r'^\s*(?:\w+\s*:\s*)?([A-Z]\w*)\s*\{')
+
+    def _element_at(self, lines, index) -> str:
+        for earlier in range(index, -1, -1):
+            match = self.OPENER.match(lines[earlier])
+            if match:
+                return match.group(1)
+        return ""
+
+    def test_no_label_binds_its_color_to_raw_accent(self):
+        offenders = []
+        for path in QML_DIR.rglob("*.qml"):
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, start=1):
+                if line.strip().startswith("//") or not self.TEXT.search(line):
+                    continue
+                element = self._element_at(lines, number - 1)
+                if element and element not in self.SHAPES:
+                    offenders.append(f"{path.name}:{number} in {element} — {line.strip()}")
+        assert offenders == []
+
+
 class TestNoDefaultChrome:
     """Every control surface must be drawn from ``Theme``, not the Basic style.
 

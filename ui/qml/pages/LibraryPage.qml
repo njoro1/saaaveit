@@ -127,7 +127,9 @@ Item {
                                 // out instead of eliding (T7.3).
                                 Layout.minimumWidth: 0
                                 text: row.modelData.name
-                                color: row.modelData.exists ? Theme.text : Theme.textMuted
+                                // textDim rather than textMuted: a selected row
+                                // tints, and muted is 3.6:1 against a tint.
+                                color: row.modelData.exists ? Theme.text : Theme.textDim
                                 font.pixelSize: Theme.fontSmall
                                 font.family: Theme.monoFont
                                 elide: Text.ElideMiddle
@@ -153,7 +155,7 @@ Item {
                                     Layout.minimumWidth: 0
                                     visible: row.modelData.detail !== ""
                                     text: row.modelData.detail
-                                    color: Theme.textMuted
+                                    color: Theme.textDim
                                     font.pixelSize: Theme.fontTiny
                                     elide: Text.ElideRight
                                 }
@@ -179,7 +181,7 @@ Item {
                             Layout.preferredWidth: 120
                             Layout.alignment: Qt.AlignVCenter
                             text: row.modelData.when
-                            color: Theme.textMuted
+                            color: Theme.textDim
                             font.pixelSize: Theme.fontSmall
                         }
 

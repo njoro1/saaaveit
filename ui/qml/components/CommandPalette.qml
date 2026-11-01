@@ -202,8 +202,11 @@ Item {
 
                         Label {
                             text: row.modelData.name
-                            color: index === root.activeIndex ? Theme.accent : Theme.text
+                            // Active row: tint + weight. Accent text on the
+                            // accentSoft fill is below AA for running text.
+                            color: Theme.text
                             font.pixelSize: Theme.fontBody
+                            font.bold: index === root.activeIndex
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
@@ -211,7 +214,8 @@ Item {
 
                         Label {
                             text: row.modelData.detail
-                            color: Theme.textMuted
+                            // The active row is tinted; muted is 3.6:1 on a tint.
+                            color: Theme.textDim
                             font.pixelSize: Theme.fontTiny
                             elide: Text.ElideRight
                             Layout.fillWidth: true
@@ -224,7 +228,7 @@ Item {
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.shortcut
-                        color: Theme.textMuted
+                        color: Theme.textDim
                         font.pixelSize: Theme.fontTiny
                         font.family: Theme.monoFont
                     }

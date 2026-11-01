@@ -152,19 +152,21 @@ QtObject {
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.14 : 0.10)
     readonly property color accentLine: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.38 : 0.35)
 
-    // Kept in step with the `mint` / `amber` accent swatches, and dark enough
-    // in light theme to be legible as running text (an error title, a warning
-    // row), not just as a fill.
+    // Status colours are running text (a chip label, an error row), so they are
+    // set by their worst *real* background rather than a plain surface: `Chip`
+    // paints `toneTint(tone)` — 10–11% of the hue over the surface beneath it —
+    // and the darkest light surface is `surfaceRaised`. Measured on the
+    // composited tint, the previous values landed at 3.99–4.05:1, i.e. under AA,
+    // because a tint of a colour is always nearer that colour than the surface
+    // is. The dark theme clears 4.5:1 on its tints already (worst: error, 4.55).
     //
-    // The light values are set by `surfaceRaised` — the *lightest* surface a
-    // status colour lands on, because `Chip` uses it as the background for a
-    // toned chip. At the previous values every light status colour sat at
-    // 4.2–4.3:1 there, i.e. just under AA. The dark theme has no equivalent
-    // problem: its status colours clear 7.8:1 on their worst surface.
-    readonly property color success: isDark ? "#3DD68C" : "#0E7948"
-    readonly property color warning: isDark ? "#F5A623" : "#985B00"
-    readonly property color error: isDark ? "#FF5F6D" : "#C72E3C"
-    readonly property color info: isDark ? "#4EA8FF" : "#1D69C5"
+    // They no longer match the `mint` / `amber` / `rose` accent swatches exactly:
+    // those are fills read through `accentInk`, where a deeper value would only
+    // muddy the page.
+    readonly property color success: isDark ? "#3DD68C" : "#0C6A3F"
+    readonly property color warning: isDark ? "#F5A623" : "#7D4B00"
+    readonly property color error: isDark ? "#FF5F6D" : "#AA2632"
+    readonly property color info: isDark ? "#4EA8FF" : "#18569F"
 
     readonly property color errorHover: Qt.lighter(error, 1.12)
     readonly property color warningHover: Qt.lighter(warning, 1.12)

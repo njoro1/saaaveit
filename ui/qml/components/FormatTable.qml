@@ -118,7 +118,10 @@ Rectangle {
                         }
                         Label {
                             text: row.modelData.codecLabel
-                            color: row.modelData.selected ? Theme.accent : Theme.text
+                            // Selection is the dot, the tint and the weight.
+                            // Accent as *text* on that tint measures 3.6:1 at
+                            // worst, which is a shape's number, not a word's.
+                            color: Theme.text
                             font.pixelSize: Theme.fontSmall
                             font.bold: row.modelData.selected
                             elide: Text.ElideRight
@@ -138,7 +141,9 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                         text: row.modelData.formatText
-                        color: Theme.textMuted
+                        // textDim, not textMuted: a selected row is tinted, and
+                        // the muted step falls to 3.6:1 against a tint.
+                        color: Theme.textDim
                         font.pixelSize: Theme.fontSmall
                         elide: Text.ElideRight
                     }
