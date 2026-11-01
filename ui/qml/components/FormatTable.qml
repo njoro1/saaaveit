@@ -77,12 +77,27 @@ Rectangle {
             delegate: Rectangle {
                 id: row
                 required property var modelData
+                required property int index
 
+                objectName: "download.formatRow." + index
                 Layout.fillWidth: true
                 implicitHeight: 32
                 color: row.modelData.selected
                        ? Theme.accentSoft
                        : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+                activeFocusOnTab: true
+
+                Keys.onReturnPressed: root.picked(row.modelData.codec, row.modelData.resolution)
+                Keys.onSpacePressed: root.picked(row.modelData.codec, row.modelData.resolution)
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: Theme.radiusSm
+                    color: "transparent"
+                    border.width: row.activeFocus ? 2 : 0
+                    border.color: Theme.accentLine
+                }
 
                 RowLayout {
                     anchors.fill: parent

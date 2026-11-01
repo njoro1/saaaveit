@@ -55,6 +55,12 @@ ColumnLayout {
         implicitHeight: 34
         radius: Theme.radiusSm
         color: root.selected === "" ? Theme.accentSoft : (noneMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+        border.width: noneItem.activeFocus ? 2 : 0
+        border.color: Theme.accentLine
+        activeFocusOnTab: true
+
+        Keys.onReturnPressed: root.choose("")
+        Keys.onSpacePressed: root.choose("")
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
@@ -95,6 +101,12 @@ ColumnLayout {
         color: (engItem.track && engItem.track.code === root.selected)
                ? Theme.accentSoft
                : (engMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+        border.width: engItem.activeFocus ? 2 : 0
+        border.color: Theme.accentLine
+        activeFocusOnTab: true
+
+        Keys.onReturnPressed: engItem.track ? root.choose(engItem.track.code) : root.choose("")
+        Keys.onSpacePressed: engItem.track ? root.choose(engItem.track.code) : root.choose("")
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8

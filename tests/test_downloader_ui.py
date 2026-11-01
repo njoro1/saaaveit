@@ -7,14 +7,16 @@ another application appears anywhere in the UI.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMetaObject, QObject
+from PySide6.QtCore import QMetaObject, QObject, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
 
 from src import media_source
 
@@ -99,8 +101,11 @@ def _show_page(root: QObject, index: int, app) -> None:
 
     A hidden ``ListView`` lays out nothing, so ``childItems()`` stays empty and
     row-level assertions would pass against a subtree that was never built.
+    Delegates appear on a later pass than the visibility change, hence the wait.
     """
     root.setProperty("currentPage", index)
+    app.processEvents()
+    QTest.qWait(60)
     app.processEvents()
 
 
@@ -128,10 +133,60 @@ def _shown_text(items: list) -> list:
             if item.property("text") is not None and bool(item.property("visible"))]
 
 
+def _focused_item(surface: QQuickItem):
+    """The deepest item holding active focus, or ``None``.
+
+    ``activeFocus`` is true for every ancestor of the focused item too, so the
+    control the user actually sees is the deepest match.
+    """
+    found: list[tuple[int, QQuickItem]] = []
+
+    def walk(node, level: int) -> None:
+        if node.property("activeFocus") is True:
+            found.append((level, node))
+        for child in node.childItems():
+            walk(child, level + 1)
+
+    walk(surface, 0)
+    return max(found)[1] if found else None
+
+
+def _focus_by_tabbing(ui, name: str, presses: int = 60) -> bool:
+    """Tab until ``name`` holds focus. True if it got there."""
+    app = QGuiApplication.instance()
+    surface = ui.root.contentItem()
+    for _ in range(presses):
+        QTest.keyClick(ui.root, Qt.Key_Tab)
+        app.processEvents()
+        focused = _focused_item(surface)
+        if focused is not None and focused.objectName() == name:
+            return True
+    return False
+
+
 def _leave_library(ui, app) -> None:
     """Back to Download, so later tests still see the page they expect."""
     ui.root.setProperty("currentPage", 0)
     app.processEvents()
+
+
+@contextlib.contextmanager
+def _one_history_row(ui, path):
+    """A library holding exactly ``path``.
+
+    History is shared by the whole module, and a delegate from an older row is
+    recycled into the new one - so a stale ``missing from disk`` label can show
+    up in the subtree of a file that exists. One row makes that impossible.
+    """
+    bridge = ui.bridge
+    saved = list(bridge._history)
+    bridge._history = []
+    bridge._record(str(path), "video")
+    try:
+        yield
+    finally:
+        bridge._history = saved
+        bridge.historyChanged.emit()
 
 
 def _call(obj: QObject, method: str) -> None:
@@ -398,25 +453,25 @@ class TestLibraryPage:
         app = QGuiApplication.instance()
         path = tmp_path / "A test video [dQw4w9WgXcQ].mp4"
         path.write_bytes(b"x" * 2048)
-        bridge._record(str(path), "video")
-        try:
-            assert _find(ui.root, "library.table").property("count") >= 1
-            row = next(r for r in bridge.history if r["path"] == str(path))
-            assert row["detail"]  # format label, shown under the name
-            assert "thumbnail" in row and "duration" in row
+        with _one_history_row(ui, path):
+            try:
+                assert _find(ui.root, "library.table").property("count") == 1
+                row = bridge.history[0]
+                assert row["detail"]  # format label, shown under the name
+                assert "thumbnail" in row and "duration" in row
 
-            items = _library_row(ui.root, app, path.name)
-            texts = _shown_text(items)
-            assert path.name in texts, texts
-            assert any(t == row["sizeText"] for t in texts), texts
-            assert not any("missing from disk" in t for t in texts)
+                items = _library_row(ui.root, app, path.name)
+                texts = _shown_text(items)
+                assert path.name in texts, texts
+                assert any(t == row["sizeText"] for t in texts), texts
+                assert not any("missing from disk" in t for t in texts)
 
-            actions = [item for item in items
-                       if item.metaObject().className().startswith("AppButton")]
-            assert actions, "a rendered row must expose its actions"
-            assert all(bool(item.property("enabled")) for item in actions)
-        finally:
-            _leave_library(ui, app)
+                actions = [item for item in items
+                           if item.metaObject().className().startswith("AppButton")]
+                assert actions, "a rendered row must expose its actions"
+                assert all(bool(item.property("enabled")) for item in actions)
+            finally:
+                _leave_library(ui, app)
 
     def test_a_row_whose_file_vanished_says_so_and_disables_actions(self, ui, tmp_path):
         """The warning is a word, not only a colour, so greyscale still reads it."""
@@ -424,27 +479,25 @@ class TestLibraryPage:
         app = QGuiApplication.instance()
         path = tmp_path / "Gone [dQw4w9WgXcQ].mp4"
         path.write_bytes(b"x" * 2048)
-        bridge._record(str(path), "video")
-        try:
-            items = _library_row(ui.root, app, path.name)
-            assert not any("missing from disk" in t for t in _shown_text(items))
+        with _one_history_row(ui, path):
+            try:
+                items = _library_row(ui.root, app, path.name)
+                assert not any("missing from disk" in t for t in _shown_text(items))
 
-            path.unlink()
-            bridge.historyChanged.emit()
-            items = _library_row(ui.root, app, path.name)
-            texts = _shown_text(items)
-            actions = [item for item in items
-                       if item.metaObject().className().startswith("AppButton")]
-            assert any("missing from disk" in t for t in texts), texts
-            by_key = {(str(item.property("text") or "") or
-                       str(item.property("tooltip") or "")): item for item in actions}
-            for key in ("Open", "Open folder"):
-                assert key in by_key, sorted(by_key)
-                assert not bool(by_key[key].property("enabled")), key
-        finally:
-            _leave_library(ui, app)
-            bridge._history = [e for e in bridge._history if e["path"] != str(path)]
-            bridge.historyChanged.emit()
+                path.unlink()
+                bridge.historyChanged.emit()
+                items = _library_row(ui.root, app, path.name)
+                texts = _shown_text(items)
+                actions = [item for item in items
+                           if item.metaObject().className().startswith("AppButton")]
+                assert any("missing from disk" in t for t in texts), texts
+                by_key = {(str(item.property("text") or "") or
+                           str(item.property("tooltip") or "")): item for item in actions}
+                for key in ("Open", "Open folder"):
+                    assert key in by_key, sorted(by_key)
+                    assert not bool(by_key[key].property("enabled")), key
+            finally:
+                _leave_library(ui, app)
 
 
 class TestSettingsPage:
@@ -471,6 +524,107 @@ class TestSettingsPage:
             assert bridge.defaultSubtitleTrack == "auto"
         finally:
             bridge.defaultSubtitleTrack = saved
+
+
+class TestKeyboardReachability:
+    """Review F6: if Tab cannot reach it, the control does not exist for some users.
+
+    Only ``activeFocusOnTab`` puts an item in the chain; a ``MouseArea`` does
+    not, however complete its ``Accessible`` properties look. The items that
+    used to be plain ``Item``/``Rectangle`` - rail destinations, the palette
+    button, format rows, the two always-visible subtitle rows and the accent
+    swatches - are exactly the ones a pointer-only review misses.
+
+    Keys go to the window because that is how the offscreen platform delivers
+    focus: the item with ``activeFocus`` receives them, same as on a real one.
+    """
+
+    REQUIRED = {
+        0: ("rail.destination.0", "rail.destination.1", "rail.destination.2",
+            "rail.palette", "download.formatRow.0", "download.trackNone",
+            "download.trackEnglish", "download.subtitleMore"),
+        2: ("settings.accent.iris", "settings.accent.azure",
+            "settings.accent.mint"),
+    }
+
+    def _tab_stops(self, ui, page: int, presses: int = 60) -> list[str]:
+        app = QGuiApplication.instance()
+        _show_page(ui.root, page, app)
+        surface = ui.root.contentItem()
+        stops = []
+        for _ in range(presses):
+            QTest.keyClick(ui.root, Qt.Key_Tab)
+            app.processEvents()
+            focused = _focused_item(surface)
+            if focused is not None:
+                stops.append(focused.objectName())
+        return stops
+
+    @pytest.mark.parametrize("page", sorted(REQUIRED))
+    def test_custom_controls_are_tab_stops(self, ui, page):
+        app = QGuiApplication.instance()
+        try:
+            seen = set(self._tab_stops(ui, page))
+            missing = [name for name in self.REQUIRED[page] if name not in seen]
+            assert missing == [], f"not reachable with Tab: {missing}"
+        finally:
+            _leave_library(ui, app)
+
+    def test_return_on_the_rail_changes_page(self, ui):
+        app = QGuiApplication.instance()
+        try:
+            assert _focus_by_tabbing(ui, "rail.destination.1"), "rail stop missing"
+            QTest.keyClick(ui.root, Qt.Key_Return)
+            app.processEvents()
+            assert ui.root.property("currentPage") == 1
+        finally:
+            ui.root.setProperty("currentPage", 0)
+            app.processEvents()
+
+    def test_return_on_a_subtitle_row_selects_it(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        saved = bridge.selectedSubtitleTrack
+        try:
+            _show_page(ui.root, 0, app)
+            assert _focus_by_tabbing(ui, "download.trackEnglish"), "row stop missing"
+            bridge.selectedSubtitleTrack = ""
+            QTest.keyClick(ui.root, Qt.Key_Space)
+            app.processEvents()
+            assert bridge.selectedSubtitleTrack == "en"
+        finally:
+            bridge.selectedSubtitleTrack = saved
+
+    def test_return_on_a_format_row_picks_that_format(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        row = bridge.formatRows[1]
+        saved = (bridge.selectedCodec, bridge.selectedResolution)
+        try:
+            _show_page(ui.root, 0, app)
+            assert _focus_by_tabbing(ui, "download.formatRow.1"), "row stop missing"
+            QTest.keyClick(ui.root, Qt.Key_Return)
+            app.processEvents()
+            assert bridge.selectedCodec == row["codec"]
+            assert str(bridge.selectedResolution) == str(row["resolution"])
+        finally:
+            bridge.selectedCodec, bridge.selectedResolution = saved
+
+    def test_return_on_an_accent_swatch_changes_the_accent(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        choices = [c["id"] for c in bridge.accentChoices]
+        target = next(c for c in choices if c != bridge.accentName)
+        saved = bridge.accentName
+        try:
+            _show_page(ui.root, 2, app)
+            assert _focus_by_tabbing(ui, f"settings.accent.{target}"), "swatch missing"
+            QTest.keyClick(ui.root, Qt.Key_Return)
+            app.processEvents()
+            assert bridge.accentName == target
+        finally:
+            bridge.setAccent(saved)
+            _leave_library(ui, app)
 
 
 class TestMediaThumb:

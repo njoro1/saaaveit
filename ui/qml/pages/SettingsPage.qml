@@ -93,12 +93,30 @@ Item {
                             model: appBridge.accentChoices
                             delegate: Rectangle {
                                 required property var modelData
+
+                                objectName: "settings.accent." + modelData.id
                                 implicitWidth: 26
                                 implicitHeight: 26
                                 radius: 13
                                 color: Theme.isDark ? modelData.dark : modelData.light
                                 border.width: appBridge.accentName === modelData.id ? 3 : 0
                                 border.color: Theme.text
+                                activeFocusOnTab: true
+
+                                Keys.onReturnPressed: appBridge.setAccent(modelData.id)
+                                Keys.onSpacePressed: appBridge.setAccent(modelData.id)
+
+                                // The selection ring is the swatch's own border,
+                                // so focus needs somewhere else to live: a second
+                                // ring outside it, in the accent line colour.
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    radius: width / 2
+                                    color: "transparent"
+                                    border.width: parent.activeFocus ? 2 : 0
+                                    border.color: Theme.accentLine
+                                }
 
                                 MouseArea {
                                     anchors.fill: parent
