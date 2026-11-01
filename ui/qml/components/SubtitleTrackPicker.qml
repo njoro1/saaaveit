@@ -29,21 +29,6 @@ ColumnLayout {
         return null
     }
 
-    function nonEnglishTracks() {
-        var result = []
-        for (var i = 0; i < root.tracks.length; i++) {
-            var t = root.tracks[i]
-            if (t && !(t.code === root.selected || (t.language === "en" && t.kind === "manual") || (t.code && (t.code.indexOf("en") === 0 || t.label.indexOf("English") >= 0)))) {
-                // Only add if it's not the selected one and not the default English one
-                // Actually we want to include all non-English tracks regardless
-                if (t.code && !(t.code.indexOf("en") === 0 || (t.label && t.label.indexOf("English") >= 0))) {
-                    result.push(t)
-                }
-            }
-        }
-        return result
-    }
-
     // Helper to collect tracks for dropdown
     property var dropdownTracks: {
         var list = []
@@ -65,6 +50,7 @@ ColumnLayout {
     // None option
     Rectangle {
         id: noneItem
+        objectName: "download.trackNone"
         Layout.fillWidth: true
         implicitHeight: 34
         radius: Theme.radiusSm
@@ -100,12 +86,15 @@ ColumnLayout {
     // Default English option
     Rectangle {
         id: engItem
+        objectName: "download.trackEnglish"
         Layout.fillWidth: true
         implicitHeight: 34
         radius: Theme.radiusSm
         visible: englishTrack() !== null
         property var track: englishTrack()
-        color: (data && data.code === root.selected) ? Theme.accentSoft : (engMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+        color: (engItem.track && engItem.track.code === root.selected)
+               ? Theme.accentSoft
+               : (engMouse.containsMouse ? Theme.surfaceAlt : "transparent")
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
@@ -140,40 +129,27 @@ ColumnLayout {
         }
     }
 
-    // Dropdown for remaining tracks
-    ComboBox {
+    // Dropdown for the remaining tracks. A BoundComboBox, like every other
+    // dropdown: the raw control opened a Basic-style popup, and binding
+    // ``currentIndex`` directly is the failure mode BoundComboBox exists to
+    // avoid (the widget's own assignment destroys the binding after the first
+    // pick, so it stops mirroring the store).
+    BoundComboBox {
+        objectName: "download.subtitleMore"
         Layout.fillWidth: true
-        visible: dropdownTracks.length > 0
-        model: dropdownTracks
+        visible: root.dropdownTracks.length > 0
+        label: "More subtitle tracks"
+        model: root.dropdownTracks
         textRole: "label"
         valueRole: "code"
-        currentIndex: dropdownTracks.findIndex(function(t) { return t.code === root.selected })
-        onActivated: function(index) {
-            if (index >= 0 && dropdownTracks[index])
-                root.choose(dropdownTracks[index].code)
-        }
-        displayText: currentIndex >= 0 ? dropdownTracks[currentIndex].label : "More subtitle tracks…"
-        indicator: Canvas {
-            x: parent.width - width - parent.padding
-            y: parent.topPadding + (parent.availableHeight - height) / 2
-            width: 12; height: 8
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.fillStyle = Theme.textDim
-                ctx.beginPath()
-                ctx.moveTo(0, 0)
-                ctx.lineTo(width, 0)
-                ctx.lineTo(width/2, height)
-                ctx.closePath()
-                ctx.fill()
-            }
-        }
-        background: Rectangle {
-            color: parent.hovered ? Theme.surfaceAlt : Theme.inset
-            border.color: Theme.border
-            border.width: 1
-            radius: Theme.radiusSm
-        }
+        // A track that is not in this list (the English one, or "None") leaves
+        // the index at -1, which is what the placeholder is for.
+        selectFirstWhenMissing: false
+        readValue: function() { return root.selected }
+        writeValue: function(value) { root.choose(value) }
+        displayText: currentIndex >= 0 && currentIndex < root.dropdownTracks.length
+                     ? root.dropdownTracks[currentIndex].label
+                     : "More subtitle tracks…"
     }
 
     Label {

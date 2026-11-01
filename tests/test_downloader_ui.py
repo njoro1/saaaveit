@@ -8,10 +8,13 @@ another application appears anywhere in the UI.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QMetaObject, QObject
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickItem
 
 from src import media_source
 
@@ -65,6 +68,70 @@ def _find(root: QObject, name: str) -> QObject:
     obj = root.findChild(QObject, name)
     assert obj is not None, f"{name} not found (objectName missing?)"
     return obj
+
+
+def _find_item(root: QObject, name: str) -> QQuickItem:
+    """Like ``_find``, but as a visual item so children can be walked.
+
+    ``findChildren(QObject)`` does not reach ``ListView`` delegates or any child
+    created inside a QML component body, which is why the row-level assertions
+    below traverse ``childItems()`` instead.
+    """
+    obj = root.findChild(QQuickItem, name)
+    assert obj is not None, f"{name} not found as a QQuickItem"
+    return obj
+
+
+def _visual_tree(item: QQuickItem) -> list:
+    out = []
+
+    def walk(node) -> None:
+        for child in node.childItems():
+            out.append(child)
+            walk(child)
+
+    walk(item)
+    return out
+
+
+def _show_page(root: QObject, index: int, app) -> None:
+    """Make a StackLayout page current so its delegates exist.
+
+    A hidden ``ListView`` lays out nothing, so ``childItems()`` stays empty and
+    row-level assertions would pass against a subtree that was never built.
+    """
+    root.setProperty("currentPage", index)
+    app.processEvents()
+
+
+def _library_row(root: QObject, app, needle: str) -> list:
+    """The rendered row containing ``needle``, as its own subtree.
+
+    History outlives a single test, so assertions are scoped to one delegate
+    rather than the whole table. Note that every label of a delegate exists
+    whatever the state - ``missing from disk`` is a static string behind a
+    ``visible:`` binding - so callers must look at visibility, not presence.
+    """
+    table = _find_item(root, "library.table")
+    _show_page(root, 1, app)
+    match = [item for item in _visual_tree(table)
+             if needle in str(item.property("text") or "")]
+    assert match, f"no rendered row mentions {needle!r}"
+    node = match[0]
+    while node.parentItem() is not None and node.parentItem().parentItem() is not table:
+        node = node.parentItem()
+    return _visual_tree(node)
+
+
+def _shown_text(items: list) -> list:
+    return [str(item.property("text")) for item in items
+            if item.property("text") is not None and bool(item.property("visible"))]
+
+
+def _leave_library(ui, app) -> None:
+    """Back to Download, so later tests still see the page they expect."""
+    ui.root.setProperty("currentPage", 0)
+    app.processEvents()
 
 
 def _call(obj: QObject, method: str) -> None:
@@ -234,6 +301,52 @@ class TestSubtitleTrackPicker:
         finally:
             bridge.selectedSubtitleTrack = saved or "ja"
 
+    def test_the_selected_row_tints_whichever_row_it_is(self, ui):
+        """Review F4: the English row once read a stale ``data`` identifier.
+
+        ``Item.data`` is the default property list, so ``data.code`` was always
+        undefined and the row never tinted, while its radio dot and label did —
+        two halves of one selection state disagreeing.
+        """
+        none_row = _find_item(ui.root, "download.trackNone")
+        english_row = _find_item(ui.root, "download.trackEnglish")
+        saved = ui.bridge.selectedSubtitleTrack
+        app = QGuiApplication.instance()
+        try:
+            ui.bridge.selectedSubtitleTrack = ""
+            app.processEvents()
+            assert none_row.property("color").alphaF() > 0.1
+            assert english_row.property("color").alphaF() == 0.0
+
+            ui.bridge.selectedSubtitleTrack = "en"
+            app.processEvents()
+            assert none_row.property("color").alphaF() == 0.0
+            assert english_row.property("color").alphaF() > 0.1
+        finally:
+            ui.bridge.selectedSubtitleTrack = saved
+
+    def test_more_tracks_is_a_bounded_themed_combo(self, ui):
+        """Review F5: the raw ComboBox opened a Basic popup and bound its index."""
+        more = _find_item(ui.root, "download.subtitleMore")
+        assert more.metaObject().className().startswith("BoundComboBox")
+        saved = ui.bridge.selectedSubtitleTrack
+        app = QGuiApplication.instance()
+        try:
+            # "en" is not in this list, so the placeholder shows, not a blank.
+            ui.bridge.selectedSubtitleTrack = "en"
+            app.processEvents()
+            assert more.property("displayText") == "More subtitle tracks…"
+            assert more.property("currentIndex") == -1
+
+            # A track that IS in the list mirrors the store after the store
+            # changed underneath it - the binding-safe path.
+            ui.bridge.selectedSubtitleTrack = "ja"
+            app.processEvents()
+            assert more.property("currentIndex") == 0
+            assert more.property("displayText") == "Japanese · manual"
+        finally:
+            ui.bridge.selectedSubtitleTrack = saved
+
 
 class TestCommandPalette:
     def test_palette_is_closed_initially(self, ui):
@@ -276,18 +389,60 @@ class TestLibraryPage:
             bridge.historyChanged.emit()
 
     def test_rows_render_the_downloaded_file(self, ui, tmp_path):
+        """The store dict is not the row; assert what the delegate painted.
+
+        ``findChildren`` cannot see a ``ListView`` delegate, so the rendered
+        subtree is walked through ``childItems()``.
+        """
         bridge = ui.bridge
+        app = QGuiApplication.instance()
         path = tmp_path / "A test video [dQw4w9WgXcQ].mp4"
         path.write_bytes(b"x" * 2048)
         bridge._record(str(path), "video")
         try:
-            table = _find(ui.root, "library.table")
-            assert table.property("count") >= 1
-            assert bridge.history[0]["name"] == path.name
-            row = bridge.history[0]
+            assert _find(ui.root, "library.table").property("count") >= 1
+            row = next(r for r in bridge.history if r["path"] == str(path))
             assert row["detail"]  # format label, shown under the name
             assert "thumbnail" in row and "duration" in row
+
+            items = _library_row(ui.root, app, path.name)
+            texts = _shown_text(items)
+            assert path.name in texts, texts
+            assert any(t == row["sizeText"] for t in texts), texts
+            assert not any("missing from disk" in t for t in texts)
+
+            actions = [item for item in items
+                       if item.metaObject().className().startswith("AppButton")]
+            assert actions, "a rendered row must expose its actions"
+            assert all(bool(item.property("enabled")) for item in actions)
         finally:
+            _leave_library(ui, app)
+
+    def test_a_row_whose_file_vanished_says_so_and_disables_actions(self, ui, tmp_path):
+        """The warning is a word, not only a colour, so greyscale still reads it."""
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        path = tmp_path / "Gone [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 2048)
+        bridge._record(str(path), "video")
+        try:
+            items = _library_row(ui.root, app, path.name)
+            assert not any("missing from disk" in t for t in _shown_text(items))
+
+            path.unlink()
+            bridge.historyChanged.emit()
+            items = _library_row(ui.root, app, path.name)
+            texts = _shown_text(items)
+            actions = [item for item in items
+                       if item.metaObject().className().startswith("AppButton")]
+            assert any("missing from disk" in t for t in texts), texts
+            by_key = {(str(item.property("text") or "") or
+                       str(item.property("tooltip") or "")): item for item in actions}
+            for key in ("Open", "Open folder"):
+                assert key in by_key, sorted(by_key)
+                assert not bool(by_key[key].property("enabled")), key
+        finally:
+            _leave_library(ui, app)
             bridge._history = [e for e in bridge._history if e["path"] != str(path)]
             bridge.historyChanged.emit()
 
@@ -359,6 +514,39 @@ class TestMediaThumb:
         assert pill.property("visible") is True
         label = _find(thumb, "mediaThumb.durationLabel")
         assert label.property("text") == "1:35"
+
+
+class TestNoDefaultChrome:
+    """Every control surface must be drawn from ``Theme``, not the Basic style.
+
+    Phase 6's acceptance was "no Basic-styled surface remains". These are the
+    code patterns that produce one, kept out of the tree by assertion rather
+    than by memory.
+    """
+
+    WRAPPERS = {"CompactComboBox.qml", "BoundComboBox.qml"}
+
+    def test_no_control_declares_a_bare_combobox(self):
+        bare = re.compile(r"(?<![\w.])ComboBox\s*\{")
+        offenders = []
+        for path in QML_DIR.rglob("*.qml"):
+            if path.name in self.WRAPPERS:
+                continue
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("//"):
+                    continue
+                if bare.search(line):
+                    offenders.append(f"{path.name}: {line.strip()}")
+        assert offenders == []
+
+    def test_no_dialog_uses_standard_buttons(self):
+        offenders = [
+            f"{path.name}: {line.strip()}"
+            for path in QML_DIR.rglob("*.qml")
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if "standardButtons" in line
+        ]
+        assert offenders == []
 
 
 class TestNoForeignVocabulary:
