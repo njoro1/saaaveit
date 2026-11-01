@@ -108,6 +108,7 @@ Rectangle {
                             font.bold: row.modelData.selected
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
                     }
 
@@ -120,6 +121,7 @@ Rectangle {
 
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: row.modelData.formatText
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSmall

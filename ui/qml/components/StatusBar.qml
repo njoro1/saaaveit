@@ -41,6 +41,7 @@ Rectangle {
         Label {
             objectName: "chrome.statusMessage"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             text: appBridge.statusMessage
             color: Theme.textDim
             font.pixelSize: Theme.fontSmall

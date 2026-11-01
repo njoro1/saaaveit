@@ -39,6 +39,7 @@ Item {
         Label {
             objectName: "settings.pageSubtitle"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             text: "Appearance, storage, shortcuts, and diagnostics."
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
@@ -142,6 +143,7 @@ Item {
                     label: "Save to"
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: appBridge.downloadDir
                         color: Theme.text
                         font.pixelSize: Theme.fontSmall
@@ -239,6 +241,7 @@ Item {
                         label: modelData.label
                         Label {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             text: modelData.value
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontSmall

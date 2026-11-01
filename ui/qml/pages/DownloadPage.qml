@@ -57,6 +57,7 @@ Item {
         Label {
             objectName: "download.pageSubtitle"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             text: "Paste a video link, inspect the formats, then save exactly what you want."
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
@@ -147,6 +148,7 @@ Item {
                             Label {
                                 objectName: "download.heroChannel"
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 visible: appBridge.videoChannel !== ""
                                 text: appBridge.videoChannel
                                 color: Theme.textMuted
@@ -345,6 +347,7 @@ Item {
                         font.pixelSize: Theme.fontSmall
                         elide: Text.ElideRight
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                     }
 
                     // Format rows arrive where the table will be; the text is
@@ -428,6 +431,7 @@ Item {
 
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "Selected: " + appBridge.selectedSubtitleLabel
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSmall
@@ -459,6 +463,7 @@ Item {
                         Label {
                             objectName: "download.folderLabel"
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             text: appBridge.downloadDir
                             color: Theme.text
                             font.pixelSize: Theme.fontSmall

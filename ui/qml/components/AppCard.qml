@@ -84,6 +84,7 @@ Rectangle {
                     id: noteLabel
                     visible: root.note !== ""
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     text: root.note
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSmall

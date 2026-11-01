@@ -206,6 +206,7 @@ Item {
                             font.pixelSize: Theme.fontBody
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
 
                         Label {
@@ -214,6 +215,7 @@ Item {
                             font.pixelSize: Theme.fontTiny
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                         }
                     }
 

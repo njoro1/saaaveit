@@ -122,6 +122,10 @@ Item {
 
                             Label {
                                 Layout.fillWidth: true
+                                // Without this the layout treats the full file
+                                // name as the minimum and pushes the actions
+                                // out instead of eliding (T7.3).
+                                Layout.minimumWidth: 0
                                 text: row.modelData.name
                                 color: row.modelData.exists ? Theme.text : Theme.textMuted
                                 font.pixelSize: Theme.fontSmall
@@ -133,8 +137,20 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: Theme.sm
 
+                                // The kind is a shape as well as a colour/word,
+                                // so video vs subtitle survives greyscale.
+                                Icon {
+                                    visible: row.modelData.detail !== ""
+                                    name: row.modelData.kind === "subtitle" ? "file" : "film"
+                                    color: Theme.textMuted
+                                    width: 12
+                                    height: 12
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
                                 Label {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     visible: row.modelData.detail !== ""
                                     text: row.modelData.detail
                                     color: Theme.textMuted
