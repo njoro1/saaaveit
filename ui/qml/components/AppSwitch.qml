@@ -32,6 +32,7 @@ Item {
 
     Rectangle {
         id: track
+        objectName: "appSwitch.track"
         width: 32
         height: 18
         radius: 9
@@ -62,9 +63,13 @@ Item {
     }
 
     Rectangle {
+        id: focusRing
+        objectName: "appSwitch.ring"
         anchors.fill: track
         anchors.margins: -3
-        radius: 12
+        // The ring is the track's radius plus its 3 px offset; hard-coding 12
+        // here is how it drifts the first time the switch grows.
+        radius: track.radius + 3
         color: "transparent"
         border.width: 2
         border.color: Theme.accentLine

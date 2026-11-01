@@ -563,6 +563,20 @@ class TestSettingsPage:
         _find(ui.root, "settings.defaultSubtitleTrack")
         _find(ui.root, "settings.filenameTemplate")
 
+    def test_the_switch_focus_ring_is_concentric(self, ui):
+        """Review F9: the ring used to be ``radius: 12``.
+
+        Twelve was right only because the track happened to be 18 tall and the
+        ring inset by -3. Expressed as ``track.radius + 3`` it stays a grown
+        pill whatever the switch becomes, and the token rule keeps one literal
+        from drifting out of step with ``Theme.radiusLg``.
+        """
+        switch = _find_item(ui.root, "settings.comfortable")
+        track = _find_item(switch, "appSwitch.track")
+        ring = _find_item(switch, "appSwitch.ring")
+        assert float(track.property("radius")) == float(track.property("height")) / 2
+        assert float(ring.property("radius")) == float(track.property("radius")) + 3
+
     def test_theme_toggle_is_wired(self, ui):
         saved = ui.bridge.themeName
         try:
