@@ -672,3 +672,17 @@ class TestInspectVideoIdentity:
         assert result["thumbnail"] == ""
         assert result["duration"] == 0
         assert result["uploader"] == ""
+
+    def test_unusable_duration_falls_back_to_zero(self, monkeypatch):
+        """Live streams report ``Infinity``; ``int()`` would raise on it.
+
+        Raising here aborts the whole inspection, so the user sees a failed
+        lookup for a video whose formats were parsed perfectly.
+        """
+        for bad in (float("inf"), float("-inf"), float("nan"), "n/a", [1]):
+            monkeypatch.setattr(media_source, "_yt_dlp_json", lambda url, b=bad: self._info(
+                duration=b, thumbnail="https://example.com/t.jpg"))
+            result = media_source.inspect_video("https://example.com/v")
+            assert result["duration"] == 0, bad
+            assert result["thumbnail"] == "https://example.com/t.jpg", bad
+            assert result["codecs"], bad

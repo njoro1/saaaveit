@@ -371,3 +371,13 @@ class TestMediaIdentity:
         assert bridge.videoThumbnail == ""
         assert bridge.videoDuration == 0
         assert bridge.videoChannel == ""
+
+    def test_unusable_duration_does_not_abort_inspection(self, bridge):
+        """A live stream reports ``Infinity``; the rest of the payload still lands."""
+        for bad in (float("inf"), float("nan"), "not-a-number", {"s": 1}):
+            payload = _payload()
+            payload.update(duration=bad, uploader="Some Channel")
+            _install(bridge, payload)
+            assert bridge.videoDuration == 0, bad
+            assert bridge.videoChannel == "Some Channel", bad
+            assert bridge.videoTitle == "Test video", bad

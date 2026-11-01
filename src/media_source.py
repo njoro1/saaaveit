@@ -625,6 +625,11 @@ def default_subtitle_track(info: dict) -> str:
     return ""
 
 
+def _seconds(value: object) -> int:
+    """Whole seconds from whatever the extractor reported (float, str, None)."""
+    return int(value or 0)
+
+
 def inspect_video(url: str) -> dict:
     """Return video metadata + a codec×resolution selection matrix.
 
@@ -654,8 +659,11 @@ def inspect_video(url: str) -> dict:
     codecs, resolutions, matrix, best = _build_matrix(formats)
 
     try:
-        duration = int(info.get("duration") or 0)
-    except (TypeError, ValueError):
+        duration = _seconds(info.get("duration"))
+    except (TypeError, ValueError, OverflowError):
+        # Live streams report ``Infinity``, which Python's json round-trips and
+        # ``int()`` refuses. A duration is decoration; it must not fail an
+        # inspection that is otherwise complete.
         duration = 0
 
     codecs_available = {

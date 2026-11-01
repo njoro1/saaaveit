@@ -498,7 +498,9 @@ class DownloaderBridge(QObject):
         self._thumbnail = str(info.get("thumbnail") or "")
         try:
             self._duration = int(info.get("duration") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # A payload from an older worker (or a live stream reporting
+            # ``Infinity``) must not abort the rest of the inspection.
             self._duration = 0
         self._uploader = str(info.get("uploader") or info.get("channel") or "")
         self._matrix = {
