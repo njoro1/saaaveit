@@ -19,7 +19,13 @@ Rectangle {
 
     signal clicked()
 
-    readonly property color _fg: tone === "" ? Theme.textDim : Theme.toneColor(tone)
+    // A toned chip's background *is* the tone at 10-14%, so its label cannot
+    // also be the plain tone: accent lands at 3.57:1 there. The other tones
+    // were set against their own tint and clear AA; `acc` is the one that needs
+    // the derived colour.
+    readonly property color _fg: tone === "" ? Theme.textDim
+                             : (tone === "acc" ? Theme.accentOnTint
+                                               : Theme.toneColor(tone))
 
     implicitWidth: row.implicitWidth + 16
     implicitHeight: 22

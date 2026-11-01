@@ -265,3 +265,53 @@ def test_accent_on_its_own_tint_is_a_shape_not_a_word():
             ratio = _ratio(_rgb(hex_light), _blend(hex_light, soft_light, s_light))
             assert ratio >= 3.0, (
                 f"{name} on its own accentSoft over {surface} (light): {ratio:.2f}:1 < 3:1")
+
+
+# --- accentOnTint: the one derived colour the UI uses as text ------------------
+# `Chip` cannot paint a label in raw accent on its own tint (3.57:1, above), so
+# Theme derives a pushed-along-the-same-hue variant with Qt.lighter/darker. QColor
+# reproduces that arithmetic without an engine, which keeps this the same
+# parse-the-token-file test as everything else.
+
+_ACCENT_ON_TINT = re.compile(
+    r'accentOnTint:\s*isDark\s*\?\s*Qt\.lighter\(accent,\s*([0-9.]+)\)\s*'
+    r':\s*Qt\.darker\(accent,\s*([0-9.]+)\)'
+)
+
+
+def _to_tuple(color) -> tuple[float, float, float]:
+    return (color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0)
+
+
+def _blend_qcolor(fg_hex: str, alpha: float, bg_hex: str):
+    from PySide6.QtGui import QColor
+
+    f, b = QColor(fg_hex), QColor(bg_hex)
+    return QColor(round(alpha * f.red() + (1 - alpha) * b.red()),
+                  round(alpha * f.green() + (1 - alpha) * b.green()),
+                  round(alpha * f.blue() + (1 - alpha) * b.blue()))
+
+
+def test_accent_on_tint_clears_aa_on_every_surface() -> None:
+    text = THEME.read_text(encoding="utf-8")
+    match = _ACCENT_ON_TINT.search(text)
+    assert match, (
+        "accentOnTint must stay `isDark ? Qt.lighter(accent, k) : "
+        "Qt.darker(accent, k)` for this test to be able to evaluate it")
+    lighter, darker = float(match.group(1)), float(match.group(2))
+    from PySide6.QtGui import QColor
+
+    _, soft_dark, soft_light = _tints()["accentSoft"]
+    for name, (hex_dark, hex_light) in _accents().items():
+        for surface in _SURFACES:
+            s_dark, s_light = _pair(surface)
+            fg_dark = QColor(hex_dark).lighter(int(round(lighter * 100)))
+            fg_light = QColor(hex_light).darker(int(round(darker * 100)))
+            ratio_dark = _ratio(_to_tuple(fg_dark),
+                                _to_tuple(_blend_qcolor(fg_dark.name(), soft_dark, s_dark)))
+            ratio_light = _ratio(_to_tuple(fg_light),
+                                 _to_tuple(_blend_qcolor(fg_light.name(), soft_light, s_light)))
+            assert ratio_dark >= 4.5, (
+                f"{name} as accentOnTint over {surface} (dark): {ratio_dark:.2f}:1 < 4.5:1")
+            assert ratio_light >= 4.5, (
+                f"{name} as accentOnTint over {surface} (light): {ratio_light:.2f}:1 < 4.5:1")

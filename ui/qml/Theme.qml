@@ -151,6 +151,12 @@ QtObject {
     readonly property color accentText: accentInk
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.14 : 0.10)
     readonly property color accentLine: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.38 : 0.35)
+    // The accent as *text on a tinted surface* — an "available in this codec"
+    // chip. Raw accent on accentSoft is 3.57:1 at worst, which is a shape's
+    // number; pushing the same hue away from the surface it sits on keeps the
+    // identity and clears AA. Never use `accent` for a label on a tint.
+    readonly property color accentOnTint: isDark ? Qt.lighter(accent, 1.35)
+                                                 : Qt.darker(accent, 1.55)
 
     // Status colours are running text (a chip label, an error row), so they are
     // set by their worst *real* background rather than a plain surface: `Chip`
