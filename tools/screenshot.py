@@ -44,7 +44,7 @@ _SHOTS_SETTINGS.clear()
 _SHOTS_SETTINGS.sync()
 store.settings = lambda: _SHOTS_SETTINGS
 
-from app.bridge import DownloaderBridge  # noqa: E402
+from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
 
@@ -122,11 +122,18 @@ def _settle(app, ms: int = 260) -> None:
         time.sleep(0.005)
 
 
+def _shoot(root, outdir: Path, name: str) -> None:
+    image = root.grabWindow()
+    image.save(str(outdir / f"{name}.png"))
+    print(f"{name}.png", image.width(), "x", image.height())
+
+
 def main() -> int:
     outdir = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ROOT / "shots"
     outdir.mkdir(parents=True, exist_ok=True)
 
     app = QGuiApplication([])
+    register_bundled_fonts()
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(QML_DIR))
 
@@ -155,6 +162,67 @@ def main() -> int:
             image.save(str(outdir / name))
             print(name, image.width(), "x", image.height())
 
+    # ------------------------------------------------------- state shots
+    # The redesign added surfaces the resting-state pages cannot show: a
+    # selected library row (drawer), a failure banner, comfortable spacing,
+    # and each accent. Seed, settle, grab, undo.
+
+    # Drawer: the first row exists on disk, so Open/Redownload are live.
+    bridge.selectHistory(0)
+    root.setProperty("currentPage", 1)
+    for theme in ("dark", "light"):
+        bridge._theme_name = theme
+        bridge.themeChanged.emit()
+        _settle(app)
+        _shoot(root, outdir, f"library-drawer-{theme}")
+    bridge.selectHistory(-1)
+
+    # Failure banner in the summary panel (dark only — the banner's own
+    # colours carry it in both themes; the page set above covers light).
+    bridge._theme_name = "dark"
+    bridge.themeChanged.emit()
+    root.setProperty("currentPage", 0)
+    bridge._set_failure(
+        "network",
+        "The network gave up",
+        "ERROR: HTTP Error 503: Service Unavailable while fetching the video",
+        "Check your connection (or proxy) and retry. A part-fetched file "
+        "resumes where it stopped.",
+    )
+    _settle(app)
+    _shoot(root, outdir, "failure-banner-dark")
+    bridge.dismissFailure()
+
+    # Comfortable spacing on the densest page.
+    bridge.setComfortable(True)
+    root.setProperty("currentPage", 2)
+    _settle(app)
+    _shoot(root, outdir, "settings-comfortable-dark")
+    bridge.setComfortable(False)
+
+    # Every accent, on the Download page where the accent does the most work.
+    root.setProperty("currentPage", 0)
+    bridge._theme_name = "dark"
+    bridge.themeChanged.emit()
+    for choice in bridge.accentChoices:
+        bridge.setAccent(choice["id"])
+        _settle(app)
+        _shoot(root, outdir, f"accent-{choice['id']}-dark")
+    bridge.setAccent("iris")
+
+    # Shortcut recording mid-capture: the armed row and the live error line.
+    root.setProperty("currentPage", 2)
+    bridge.setShortcut("inspect", "")  # an unassigned row reads differently
+    root.setProperty("capturingAction", bridge.shortcutRows[0]["action"])
+    root.setProperty("capturingShortcuts", True)
+    root.setProperty("captureMessage", "Shortcuts need Ctrl or Alt.")
+    _settle(app)
+    _shoot(root, outdir, "shortcuts-recording-dark")
+    root.setProperty("capturingShortcuts", False)
+    root.setProperty("capturingAction", "")
+    root.setProperty("captureMessage", "")
+    bridge.resetAllShortcuts()
+
     # The two overlays, on top of the Download page. They are the only surfaces
     # a page shot cannot show, and both are scrollable.
     root.setProperty("currentPage", 0)
@@ -169,9 +237,7 @@ def main() -> int:
             continue
         overlay.setProperty("visible", True)
         _settle(app)
-        image = root.grabWindow()
-        image.save(str(outdir / f"{shot}.png"))
-        print(f"{shot}.png", image.width(), "x", image.height())
+        _shoot(root, outdir, shot)
         overlay.setProperty("visible", False)
         _settle(app)
     return 0

@@ -25,7 +25,7 @@ _S.clear()
 _S.sync()
 store.settings = lambda: _S
 
-from app.bridge import DownloaderBridge  # noqa: E402
+from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tools"))
 from screenshot import QML_DIR, _payload, _seed_history, _settle  # noqa: E402
@@ -34,6 +34,7 @@ OUT = ROOT / "shots" / "t7" / f"{scale}x-{width}x{height}"
 OUT.mkdir(parents=True, exist_ok=True)
 
 app = QGuiApplication([])
+register_bundled_fonts()
 engine = QQmlApplicationEngine()
 engine.addImportPath(str(QML_DIR))
 bridge = DownloaderBridge()

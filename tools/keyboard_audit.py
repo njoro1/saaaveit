@@ -44,7 +44,7 @@ QSettings.setDefaultFormat(QSettings.IniFormat)
 QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _scratch)
 QSettings.setPath(QSettings.IniFormat, QSettings.SystemScope, _scratch)
 
-from app.bridge import DownloaderBridge  # noqa: E402
+from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
 from src import media_source, store  # noqa: E402
 
 PAGES = {0: "Download", 1: "Library", 2: "Settings"}
@@ -82,6 +82,7 @@ def _seed_payload() -> dict:
 
 def main() -> int:
     app = QGuiApplication.instance() or QGuiApplication([])
+    register_bundled_fonts()
     bridge = DownloaderBridge()
     engine = QQmlApplicationEngine()
     engine.addImportPath(os.path.join(ROOT, "ui", "qml"))
@@ -156,7 +157,10 @@ def main() -> int:
         window.setProperty("currentPage", index)
         settle()
         stops: list[str] = []
-        for _ in range(40):
+        # 90 presses: the redesigned pages run longer than the old ones (the
+        # format matrix alone adds a dozen cells, the shortcut rows two buttons
+        # each), and a chain that never wraps proves nothing about reachability.
+        for _ in range(90):
             QTest.keyClick(window, Qt.Key_Tab)
             app.processEvents()
             item = focused()
