@@ -86,18 +86,23 @@ Item {
                 implicitWidth: segLabel.implicitWidth + 24
                 radius: Theme.radiusXs
                 opacity: seg.isOff ? 0.45 : 1.0
-                color: seg.isOn ? Theme.accent
+                // The reference's pressed segment is *not* the accent: a raised
+                // surface and a heavier word. The accent stays reserved for
+                // shapes the eye tracks over time.
+                color: seg.isOn ? Theme.surfaceRaised
                                 : (segHover.hovered && !seg.isOff
                                    ? Theme.surfaceAlt : "transparent")
+                border.width: seg.isOn ? 1 : 0
+                border.color: Theme.borderStrong
 
                 Label {
                     id: segLabel
                     anchors.centerIn: parent
                     text: seg.modelData.label
-                    color: seg.isOn ? Theme.accentInk
+                    color: seg.isOn ? Theme.text
                          : seg.isOff ? Theme.textMuted : Theme.textDim
                     font.pixelSize: Theme.fontSmall
-                    font.bold: seg.isOn
+                    font.weight: seg.isOn ? Font.DemiBold : Font.Normal
                 }
 
                 HoverHandler { id: segHover }

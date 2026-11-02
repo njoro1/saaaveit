@@ -3,12 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// Subtitle picker: only "None" and the English track shown as radios;
-// all other tracks live in a dropdown.
+// Subtitle picker: "None" and the English track as `.radio` rows; every other
+// track lives in the dropdown, exactly like the reference.
 ColumnLayout {
     id: root
     objectName: "download.subtitleTracks"
-    spacing: 4
+    spacing: 6
 
     readonly property var tracks: appBridge.subtitleTracks
     readonly property string selected: appBridge.selectedSubtitleTrack
@@ -52,34 +52,44 @@ ColumnLayout {
         id: noneItem
         objectName: "download.trackNone"
         Layout.fillWidth: true
-        implicitHeight: 34
-        radius: Theme.radiusSm
-        color: root.selected === "" ? Theme.accentSoft : (noneMouse.containsMouse ? Theme.surfaceAlt : "transparent")
-        border.width: noneItem.activeFocus ? 2 : 0
-        border.color: Theme.accentLine
+        implicitHeight: 40
+        radius: Theme.radiusMd
+        color: root.selected === "" ? Theme.accentSoft
+               : (noneMouse.containsMouse ? Theme.surfaceAlt : Theme.surface)
+        border.width: noneItem.activeFocus ? 2 : 1
+        border.color: root.selected === "" || noneItem.activeFocus
+                      ? Theme.accentLine : Theme.border
         activeFocusOnTab: true
 
         Keys.onReturnPressed: root.choose("")
         Keys.onSpacePressed: root.choose("")
+
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 10
-            spacing: 8
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 10
+
+            // `.radio i` - the ring thickens to a filled dot when checked.
             Rectangle {
-                implicitWidth: 14; implicitHeight: 14; radius: 7
+                implicitWidth: 16
+                implicitHeight: 16
+                radius: 8
                 color: "transparent"
-                border.width: root.selected === "" ? 4 : 1
+                border.width: root.selected === "" ? 5 : 2
                 border.color: root.selected === "" ? Theme.accent : Theme.borderStrong
             }
+
             Label {
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 text: "None — video only"
                 color: root.selected === "" ? Theme.text : Theme.textDim
-                font.pixelSize: Theme.fontSmall
-                font.bold: root.selected === ""
+                font.pixelSize: Theme.fontBody
+                font.weight: root.selected === "" ? Font.DemiBold : Font.Normal
             }
         }
+
         MouseArea {
             id: noneMouse
             anchors.fill: parent
@@ -87,6 +97,10 @@ ColumnLayout {
             cursorShape: Qt.PointingHandCursor
             onClicked: root.choose("")
         }
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.checked: root.selected === ""
+        Accessible.name: "None — video only"
     }
 
     // Default English option
@@ -94,46 +108,53 @@ ColumnLayout {
         id: engItem
         objectName: "download.trackEnglish"
         Layout.fillWidth: true
-        implicitHeight: 34
-        radius: Theme.radiusSm
+        implicitHeight: 40
         visible: englishTrack() !== null
         property var track: englishTrack()
-        color: (engItem.track && engItem.track.code === root.selected)
-               ? Theme.accentSoft
-               : (engMouse.containsMouse ? Theme.surfaceAlt : "transparent")
-        border.width: engItem.activeFocus ? 2 : 0
-        border.color: Theme.accentLine
+        readonly property bool checked: track !== null && track.code === root.selected
+        radius: Theme.radiusMd
+        color: checked ? Theme.accentSoft
+               : (engMouse.containsMouse ? Theme.surfaceAlt : Theme.surface)
+        border.width: engItem.activeFocus ? 2 : 1
+        border.color: checked || engItem.activeFocus ? Theme.accentLine : Theme.border
         activeFocusOnTab: true
 
         Keys.onReturnPressed: engItem.track ? root.choose(engItem.track.code) : root.choose("")
         Keys.onSpacePressed: engItem.track ? root.choose(engItem.track.code) : root.choose("")
+
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 10
-            spacing: 8
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 10
+
             Rectangle {
-                implicitWidth: 14; implicitHeight: 14; radius: 7
+                implicitWidth: 16
+                implicitHeight: 16
+                radius: 8
                 color: "transparent"
-                border.width: (engItem.track && engItem.track.code === root.selected) ? 4 : 1
-                border.color: (engItem.track && engItem.track.code === root.selected) ? Theme.accent : Theme.borderStrong
+                border.width: engItem.checked ? 5 : 2
+                border.color: engItem.checked ? Theme.accent : Theme.borderStrong
             }
+
             Label {
                 Layout.fillWidth: true
-                text: (engItem.track ? engItem.track.label : "English")
-                color: (engItem.track && engItem.track.code === root.selected) ? Theme.text : Theme.textDim
-                font.pixelSize: Theme.fontSmall
-                font.bold: (engItem.track && engItem.track.code === root.selected)
+                Layout.minimumWidth: 0
+                text: engItem.track ? engItem.track.label : "English"
+                color: engItem.checked ? Theme.text : Theme.textDim
+                font.pixelSize: Theme.fontBody
+                font.weight: engItem.checked ? Font.DemiBold : Font.Normal
             }
-            Label {
+
+            // `.chip.a` pushed to the right edge, exactly as the reference does
+            // for the original track.
+            Chip {
                 visible: !!(engItem.track && engItem.track.isOriginal)
                 text: "original"
-                // This row tints when selected, and the muted step is 3.6:1 on
-                // a tint; textDim keeps the tag readable in that state.
-                color: Theme.textDim
-                font.pixelSize: Theme.fontTiny
+                tone: "acc"
             }
         }
+
         MouseArea {
             id: engMouse
             anchors.fill: parent
@@ -141,6 +162,10 @@ ColumnLayout {
             cursorShape: Qt.PointingHandCursor
             onClicked: engItem.track ? root.choose(engItem.track.code) : root.choose("")
         }
+
+        Accessible.role: Accessible.RadioButton
+        Accessible.checked: engItem.checked
+        Accessible.name: engItem.track ? engItem.track.label : "English"
     }
 
     // Dropdown for the remaining tracks. A BoundComboBox, like every other
@@ -151,6 +176,7 @@ ColumnLayout {
     BoundComboBox {
         objectName: "download.subtitleMore"
         Layout.fillWidth: true
+        Layout.topMargin: 4
         visible: root.dropdownTracks.length > 0
         label: "More subtitle tracks"
         model: root.dropdownTracks
@@ -168,6 +194,7 @@ ColumnLayout {
 
     Label {
         Layout.fillWidth: true
+        Layout.minimumWidth: 0
         visible: root.tracks.length === 0
         text: "This video publishes no subtitle tracks. You can still download the video."
         color: Theme.textMuted

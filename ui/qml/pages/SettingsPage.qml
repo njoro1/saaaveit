@@ -5,13 +5,16 @@ import QtQuick.Dialogs
 import ".."
 import "../components"
 
-// Appearance, where files go, the default subtitle choice, keyboard shortcuts,
-// and the two destructive actions. Everything persists on its own: this app
-// owns its settings store end to end.
+// Appearance, where files go, the default subtitle choice, recordable keyboard
+// shortcuts, readiness, environment, the CLI, and the one destructive action.
+// Everything persists on its own — the Saved toast is the autosave saying it
+// landed. Card order follows the reference.
 Item {
     id: page
 
     objectName: "settingsPage"
+
+    readonly property string windowTitle: "Settings"
 
     FolderDialog {
         id: folderPicker
@@ -19,7 +22,24 @@ Item {
         onAccepted: appBridge.setDownloadDir(selectedFolder)
     }
 
-    // The page title matches Library's; card headers stay well below it.
+    // ------------------------------------------------------- saved toast
+    // The bridge fires ``savedToast`` from its 400 ms autosave debounce; the
+    // label shows for 1.6 s on the same beat the "Changes save automatically"
+    // promise is kept.
+    Timer {
+        id: savedToastTimer
+        interval: 1600
+        onTriggered: savedToast.opacity = 0
+    }
+
+    Connections {
+        target: appBridge
+        function onSavedToast() {
+            savedToast.opacity = 1
+            savedToastTimer.restart()
+        }
+    }
+
     ColumnLayout {
         id: pageHeader
         anchors.left: parent.left
@@ -28,19 +48,38 @@ Item {
         anchors.margins: Theme.lg
         spacing: 2
 
-        Label {
-            objectName: "settings.pageTitle"
-            text: "Settings"
-            color: Theme.text
-            font.pixelSize: Theme.fontH1
-            font.bold: true
+        RowLayout {
+            spacing: 10
+
+            Label {
+                objectName: "settings.pageTitle"
+                text: "Settings"
+                color: Theme.text
+                font.pixelSize: Theme.fontH1
+                font.bold: true
+            }
+
+            Label {
+                id: savedToast
+                objectName: "settings.savedToast"
+                text: "Saved ✓"
+                color: Theme.success
+                font.pixelSize: Theme.fontSmall
+                font.bold: true
+                opacity: 0
+                Behavior on opacity {
+                    NumberAnimation { duration: Theme.reducedMotion ? 0 : 180 }
+                }
+            }
+
+            Item { Layout.fillWidth: true }
         }
 
         Label {
             objectName: "settings.pageSubtitle"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            text: "Appearance, storage, shortcuts, and diagnostics."
+            text: "Changes save automatically."
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
             elide: Text.ElideRight
@@ -143,7 +182,7 @@ Item {
 
                 SettingsRow {
                     label: "Reduced motion"
-                    hint: "Stops pulsing dots and sliding progress."
+                    hint: "Stops shimmer and sliding progress."
                     AppSwitch {
                         objectName: "settings.reducedMotion"
                         checked: appBridge.reducedMotion
@@ -160,6 +199,7 @@ Item {
                 SettingsRow {
                     label: "Save to"
                     Label {
+                        objectName: "settings.downloadDir"
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                         text: appBridge.downloadDir
@@ -174,16 +214,41 @@ Item {
                         iconName: "folder"
                         onClicked: folderPicker.open()
                     }
+                    AppButton {
+                        text: "Open"
+                        small: true
+                        variant: "ghost"
+                        iconName: "external"
+                        onClicked: appBridge.openDownloadFolder()
+                    }
                 }
 
                 SettingsRow {
                     label: "Filename template"
                     hint: "yt-dlp fields: %(title)s, %(id)s, %(ext)s"
-                    CompactTextField {
-                        objectName: "settings.filenameTemplate"
+
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        text: appBridge.filenameTemplate
-                        onEditingFinished: appBridge.filenameTemplate = text
+                        Layout.minimumWidth: 0
+                        spacing: 4
+
+                        CompactTextField {
+                            objectName: "settings.filenameTemplate"
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: 300
+                            text: appBridge.filenameTemplate
+                            onEditingFinished: appBridge.filenameTemplate = text
+                        }
+
+                        Label {
+                            objectName: "settings.templatePreview"
+                            text: appBridge.filenamePreview
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.monoFont
+                            elide: Text.ElideMiddle
+                            Layout.maximumWidth: 300
+                        }
                     }
                 }
 
@@ -216,48 +281,96 @@ Item {
                         required property var modelData
                         label: modelData.label
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: modelData.sequence === "" ? "unassigned" : modelData.sequence
-                            color: Theme.text
-                            font.pixelSize: Theme.fontSmall
-                            font.family: Theme.monoFont
-                        }
-
-                        AppButton {
-                            text: "Reset"
-                            small: true
-                            variant: "ghost"
-                            onClicked: appBridge.resetShortcut(modelData.action)
+                        ShortcutRecorder {
+                            action: modelData.action
+                            sequence: modelData.sequence
+                            isDefault: modelData.isDefault
                         }
                     }
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Item { Layout.fillWidth: true }
+                    spacing: Theme.sm
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: "Click Record, then press the new keys. Shortcuts need Ctrl or Alt."
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSmall
+                        wrapMode: Text.WordWrap
+                    }
+
                     AppButton {
-                        text: "Reset all shortcuts"
+                        objectName: "settings.resetAllShortcuts"
+                        text: "Reset all"
                         small: true
                         variant: "ghost"
+                        iconName: "undo"
                         onClicked: appBridge.resetAllShortcuts()
                     }
                 }
             }
 
-            // ------------------------------------------------ DIAGNOSTICS
+            // ------------------------------------------------- READINESS
             AppCard {
                 Layout.fillWidth: true
-                title: "Diagnostics"
+                title: "Readiness"
 
                 ReadinessChecklist { Layout.fillWidth: true }
 
+                SettingsRow {
+                    label: "Log"
+                    hint: "Read it here, copy it, or export it."
+
+                    AppButton {
+                        objectName: "settings.viewLog"
+                        text: "View log"
+                        small: true
+                        variant: "ghost"
+                        iconName: "file"
+                        onClicked: if (Window.window) Window.window.openLog()
+                    }
+                    AppButton {
+                        objectName: "settings.exportLog"
+                        text: "Export"
+                        small: true
+                        variant: "ghost"
+                        iconName: "save"
+                        onClicked: appBridge.exportLog()
+                    }
+                    AppButton {
+                        objectName: "settings.openDebugLog"
+                        text: "Open file"
+                        small: true
+                        variant: "ghost"
+                        iconName: "external"
+                        onClicked: appBridge.openDebugLog()
+                    }
+                }
+            }
+
+            // ----------------------------------------------- ENVIRONMENT
+            AppCard {
+                Layout.fillWidth: true
+                title: "Environment"
+
                 Repeater {
-                    model: appBridge.environmentRows
+                    // The reference names exactly these three; the other
+                    // bridge rows (app folder, yt-dlp) live in the picker and
+                    // readiness cards instead.
+                    model: {
+                        var wanted = ["settings_store", "log_file", "python"]
+                        return appBridge.environmentRows.filter(function (row) {
+                            return wanted.indexOf(row.id) !== -1
+                        })
+                    }
                     delegate: SettingsRow {
                         required property var modelData
                         label: modelData.label
+
                         Label {
+                            objectName: "settings.environment." + modelData.id
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
                             text: modelData.value
@@ -269,43 +382,70 @@ Item {
                         }
                     }
                 }
+            }
 
-                RowLayout {
+            // ---------------------------------------------- COMMAND LINE
+            AppCard {
+                Layout.fillWidth: true
+                title: "Command line"
+
+                Label {
                     Layout.fillWidth: true
-                    spacing: Theme.sm
+                    text: "The same engine runs without the window."
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSmall
+                }
 
-                    AppButton {
-                        text: "Open download folder"
-                        small: true
-                        variant: "ghost"
-                        iconName: "folder"
-                        onClicked: appBridge.openDownloadFolder()
+                Repeater {
+                    model: [
+                        "saaaveit --list-formats URL",
+                        "saaaveit URL --subs-only",
+                        "saaaveit URL -o D:\\Clips"
+                    ]
+                    delegate: RowLayout {
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        TextInput {
+                            id: line
+                            objectName: "settings.cmdLine." + index
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: modelData
+                            readOnly: true
+                            selectByMouse: true
+                            persistentSelection: false
+                            color: Theme.text
+                            font.pixelSize: Theme.fontSmall
+                            font.family: Theme.monoFont
+                            clip: true
+                        }
+
+                        AppButton {
+                            objectName: "settings.cmdCopy." + index
+                            text: "Copy"
+                            small: true
+                            variant: "ghost"
+                            iconName: "copy"
+                            Accessible.name: "Copy command " + (index + 1)
+                            onClicked: {
+                                line.selectAll()
+                                line.copy()
+                            }
+                        }
                     }
-                    AppButton {
-                        text: "Export log"
-                        small: true
-                        variant: "ghost"
-                        iconName: "save"
-                        onClicked: appBridge.exportLog()
-                    }
-                    AppButton {
-                        text: "Open debug log"
-                        small: true
-                        variant: "ghost"
-                        iconName: "terminal"
-                        onClicked: appBridge.openDebugLog()
-                    }
-                    Item { Layout.fillWidth: true }
                 }
             }
 
             // -------------------------------------------------- DANGER
             DangerZone {
                 Layout.fillWidth: true
-                title: "Danger zone"
-                description: "Clearing stored settings forgets your download folder, "
-                           + "appearance and shortcuts. Downloaded files are not touched."
-                actionLabel: "Clear stored settings"
+                title: "Reset"
+                description: "Clears your folder, appearance and shortcuts. "
+                           + "Downloaded files stay."
+                actionLabel: "Clear settings"
                 confirmWord: "RESET"
                 onConfirmed: appBridge.clearStoredSettings()
             }

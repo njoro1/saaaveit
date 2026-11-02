@@ -18,6 +18,14 @@ Button {
     // status tones: "acc" would paint raw accent on a word, which is below AA
     // on any surface it could land on.
     property string tone: ""
+    // ``[aria-pressed=true]`` on a ``.btn``: the accent tint, a `line` border
+    // and a heavier word. The label stays `text` — accent on its own tint is a
+    // shape's contrast ratio, not a word's.
+    property bool selected: false
+    // Reference buttons are flex boxes with ``justify-content: center``, so a
+    // button that a Layout *stretches* still keeps its label in the middle
+    // instead of hugging the left edge.
+    property bool centered: false
 
     readonly property bool _primary: variant === "primary"
     readonly property bool _danger: variant === "danger"
@@ -63,12 +71,13 @@ Button {
             // button gets.
             if (root._danger) return root.hovered ? Theme.surfaceRaised : "transparent"
             if (root._ghost || root._link) return root.hovered ? Theme.surfaceAlt : "transparent"
+            if (root.selected) return Theme.accentSoft
             return root.hovered ? Theme.surfaceRaised : Theme.surfaceAlt
         }
         // The keyboard focus ring is a 2 px accent border; it has to win over
         // the resting border so tabbing is always visible.
-        border.width: root.activeFocus ? 2 : (root._bordered || root._danger ? 1 : 0)
-        border.color: root.activeFocus ? Theme.accentLine
+        border.width: root.activeFocus || root.selected ? 2 : (root._bordered || root._danger ? 1 : 0)
+        border.color: root.activeFocus || root.selected ? Theme.accentLine
                       : root._danger ? Theme.error
                       : Theme.borderStrong
         Behavior on color { ColorAnimation { duration: Theme.reducedMotion ? 0 : 120 } }
@@ -76,6 +85,11 @@ Button {
 
     contentItem: RowLayout {
         spacing: 8
+
+        Item {
+            visible: root.centered
+            Layout.fillWidth: true
+        }
 
         Icon {
             visible: root.iconName !== ""
@@ -90,10 +104,16 @@ Button {
             text: root.text
             color: root.labelColor
             font.pixelSize: root.small ? Theme.fontSmall : Theme.fontBody
-            // The reference sets buttons at 500, its primary at 600, and the
-            // status bar's counts at 600.
-            font.weight: root._primary || root.tone !== "" ? Font.DemiBold : Font.Medium
+            // The reference sets buttons at 500, its primary at 600, its
+            // pressed ones at 700, and the status bar's counts at 600.
+            font.weight: root.selected ? Font.Bold
+                     : (root._primary || root.tone !== "" ? Font.DemiBold : Font.Medium)
             verticalAlignment: Text.AlignVCenter
+        }
+
+        Item {
+            visible: root.centered
+            Layout.fillWidth: true
         }
     }
 

@@ -35,7 +35,7 @@ Item {
     property bool small: false
 
     readonly property int glyph: small ? 11 : 14
-    readonly property int ring: small ? 16 : 20
+    readonly property int ring: small ? 16 : Theme.statusMarkSize
     readonly property string iconName: {
         if (status === "ok") return "check"
         if (status === "todo") return "alert"
@@ -50,12 +50,10 @@ Item {
         return Theme.textMuted          // na + unchecked share the muted hue,
                                         // but not the shape
     }
-    readonly property color ringTint: {
-        if (status === "ok") return Theme.successTint
-        if (status === "todo") return Theme.warningTint
-        if (status === "error") return Theme.errorTint
-        return "transparent"
-    }
+    // Reference `.m`: a decided state is a solid disc with the glyph knocked out
+    // of it. Only the two "no verdict" shapes are outlines.
+    readonly property bool filled: status === "ok" || status === "todo"
+                                   || status === "error"
 
     implicitWidth: row.implicitWidth
     implicitHeight: Math.max(root.ring, label.implicitHeight)
@@ -75,7 +73,7 @@ Item {
             Layout.preferredHeight: root.ring
             Layout.alignment: Qt.AlignVCenter
             radius: root.ring / 2
-            color: root.ringTint
+            color: root.filled ? root.tone : "transparent"
             border.width: Theme.statusRingWidth(root.status)
             border.color: Theme.statusRing(root.status)
 
@@ -83,7 +81,9 @@ Item {
                 anchors.centerIn: parent
                 visible: root.iconName !== ""
                 name: root.iconName
-                color: root.tone
+                // Both the fill and the ink come from the status system, so the
+                // glyph is legible on all four discs in both themes.
+                color: root.filled ? Theme.statusOnFill : root.tone
                 strokeWidth: 2.4
                 width: root.glyph
                 height: root.glyph

@@ -594,3 +594,102 @@ class TestEnvironmentRows:
         by_id = {row["id"]: row["label"] for row in rows}
         assert {"settings_store", "log_file", "python"} <= set(by_id)
         assert by_id["python"] == "Python"
+
+
+class TestRedownload:
+    """The drawer's Redownload: hand the URL to Download, then run what was
+    recorded once the inspection lands - and never run it twice."""
+
+    def _seed(self, bridge, tmp_path, kind="video"):
+        path = tmp_path / ("clip [dQw4w9WgXcQ].mp4" if kind == "video"
+                           else "clip [dQw4w9WgXcQ].en.srt")
+        path.write_bytes(b"x" * 64)
+        _set_url(bridge, "https://example.com/video?v=dQw4w9WgXcQ")
+        _install(bridge, _payload())
+        if kind == "subtitle":
+            # Record with an explicit English track, so ``detail`` is a label
+            # the tests below can remove again on purpose.
+            bridge.selectedSubtitleTrack = "en"
+        bridge._record(str(path), kind)
+        return bridge
+
+    def test_redownload_navigates_and_arms_the_pending_run(self, bridge, tmp_path, monkeypatch):
+        self._seed(bridge, tmp_path)
+        inspected = []
+        monkeypatch.setattr(bridge, "inspect", lambda: inspected.append("inspect"))
+        tabs = []
+        bridge.requestTab.connect(tabs.append)
+        bridge.redownload(0)
+        assert tabs == [0]
+        assert inspected == ["inspect"]
+        assert bridge._pending_redownload["kind"] == "video"
+        # The recorded format label rides along; the video run ignores it.
+        assert bridge._pending_redownload["detail"]
+
+    def test_the_landing_inspection_starts_exactly_one_run(self, bridge, tmp_path, monkeypatch):
+        self._seed(bridge, tmp_path)
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
+        runs = []
+        monkeypatch.setattr(bridge, "download", lambda: runs.append("download"))
+        bridge.redownload(0)
+        _install(bridge, _payload())
+        assert runs == ["download"]
+        assert bridge._pending_redownload is None
+        # A second inspection of the same video must not start a second run.
+        _install(bridge, _payload())
+        assert runs == ["download"]
+
+    def test_a_subtitle_entry_reselects_and_runs_its_track(self, bridge, tmp_path, monkeypatch):
+        self._seed(bridge, tmp_path, kind="subtitle")
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
+        subs = []
+        monkeypatch.setattr(bridge, "downloadSubtitleOnly", lambda: subs.append("sub"))
+        bridge.redownload(0)
+        _install(bridge, _payload())
+        assert subs == ["sub"]
+        assert bridge.selectedSubtitleTrack == "en"
+
+    def test_a_subtitle_track_that_no_longer_exists_only_says_so(self, bridge, tmp_path, monkeypatch):
+        self._seed(bridge, tmp_path, kind="subtitle")
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
+        subs = []
+        monkeypatch.setattr(bridge, "downloadSubtitleOnly", lambda: subs.append("sub"))
+        bridge.redownload(0)
+        # The new inspection offers no English track any more.
+        _install(bridge, _payload(tracks=[
+            {"code": "ja", "name": "Japanese", "kind": "manual",
+             "label": "Japanese · manual", "isOriginal": True},
+        ]))
+        assert subs == []
+        assert "no longer offered" in bridge.statusMessage
+
+    def test_a_failed_inspection_drops_the_pending_run(self, bridge, tmp_path, monkeypatch):
+        self._seed(bridge, tmp_path)
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
+        runs = []
+        monkeypatch.setattr(bridge, "download", lambda: runs.append("download"))
+        bridge.redownload(0)
+        bridge._info_gen += 1
+        bridge._on_info_done(f"INFOERROR:{bridge._info_gen}|Could not reach the page")
+        assert bridge._pending_redownload is None
+        assert runs == []
+
+    def test_redownload_is_refused_while_a_download_runs(self, bridge, tmp_path):
+        self._seed(bridge, tmp_path)
+        bridge._download_running = True
+        tabs = []
+        bridge.requestTab.connect(tabs.append)
+        bridge.redownload(0)
+        assert tabs == []
+        assert bridge._pending_redownload is None
+        assert "running download" in bridge.statusMessage
+        bridge._download_running = False
+
+    def test_an_entry_without_a_source_url_says_so(self, bridge, tmp_path):
+        path = tmp_path / "clip [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 64)
+        bridge._history = [{"path": str(path), "kind": "video", "detail": "VP9 · 1080p"}]
+        bridge.historyChanged.emit()
+        bridge.redownload(0)
+        assert bridge._pending_redownload is None
+        assert "without a source URL" in bridge.statusMessage

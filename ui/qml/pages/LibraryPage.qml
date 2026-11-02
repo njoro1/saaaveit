@@ -4,18 +4,30 @@ import QtQuick.Layouts
 import ".."
 import "../components"
 
-// Everything this app has downloaded, newest first. Rows are read from the
-// bridge, which is also the only thing that can delete them.
+// Everything this app has downloaded, newest first (reference ``.lib``).
+//
+// A row is a *button*: one click selects it and the 320 px drawer slides in
+// beside the list with that file's full story. The selected row collapses the
+// ``WHEN``/actions columns to give the drawer room, exactly as the reference
+// grid does. The drawer is a sibling of the list, not another column, so it can
+// stay put while the list scrolls.
 Item {
     id: page
 
     objectName: "libraryPage"
 
+    readonly property bool hasSelection: appBridge.selectedHistoryIndex >= 0
+    readonly property int selected: appBridge.selectedHistoryIndex
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Theme.lg
+        anchors.leftMargin: Theme.pagePaddingH
+        anchors.rightMargin: Theme.pagePaddingH
+        anchors.topMargin: Theme.pagePaddingV
+        anchors.bottomMargin: Theme.pagePaddingV
         spacing: Theme.md
 
+        // ---------------------------------------------------------------- header
         RowLayout {
             Layout.fillWidth: true
             spacing: Theme.sm
@@ -28,7 +40,10 @@ Item {
             }
 
             Label {
-                text: appBridge.historyCount + " file(s)"
+                // The reference's own caption; the count is the only number here.
+                text: appBridge.historyCount +
+                      (appBridge.historyCount === 1 ? " item" : " items") +
+                      " saved by this app, newest first"
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontSmall
             }
@@ -54,266 +69,250 @@ Item {
             }
         }
 
-        AppCard {
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            title: "Downloaded files"
+            spacing: Theme.columnGap
 
-            Rectangle {
-                Layout.fillWidth: true
-                implicitHeight: 28
-                color: Theme.inset
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    spacing: Theme.sm
-
-                    Item { Layout.preferredWidth: 64 }
-                    Label { Layout.fillWidth: true; text: "FILE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 70; text: "SIZE"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Label { Layout.preferredWidth: 120; text: "WHEN"; color: Theme.textMuted; font.pixelSize: Theme.fontTiny; font.letterSpacing: 0.6 }
-                    Item { Layout.preferredWidth: 108 }
-                }
-            }
-
-            ListView {
-                id: list
-                objectName: "library.table"
+            // ----------------------------------------------------------- the list
+            AppCard {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                spacing: 0
-                model: appBridge.history
-                ScrollBar.vertical: AppScrollBar { }
+                title: "Downloaded files"
 
-                delegate: Rectangle {
-                    id: row
-                    required property var modelData
-                    required property int index
-
-                    width: list.width
-                    // Two lines of text or the 36 px preview, whichever is taller.
-                    height: Math.max(Theme.rowHeight + Theme.xs * 3,
-                                     rowBody.implicitHeight + Theme.sm)
-                    color: index === list.currentIndex ? Theme.accentSoft
-                         : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+                // Column header. The widths mirror the delegate exactly; when a
+                // row is selected the ``WHEN`` and actions headers disappear with
+                // the columns, so the header never lies about what is below it.
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 28
+                    color: Theme.inset
 
                     RowLayout {
-                        id: rowBody
                         anchors.fill: parent
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
                         spacing: Theme.sm
 
-                        MediaThumb {
-                            Layout.preferredWidth: 64
-                            Layout.preferredHeight: 36
-                            Layout.alignment: Qt.AlignVCenter
-                            source: row.modelData.thumbnail || ""
-                            duration: row.modelData.duration || 0
-                        }
-
-                        ColumnLayout {
+                        Item { Layout.preferredWidth: Theme.listThumbWidth }
+                        Label {
                             Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 1
+                            text: "FILE"
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontTiny
+                            font.letterSpacing: 0.6
+                        }
+                        Label {
+                            Layout.preferredWidth: Theme.listSizeWidth
+                            text: "SIZE"
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontTiny
+                            font.letterSpacing: 0.6
+                        }
+                        Label {
+                            visible: !page.hasSelection
+                            Layout.preferredWidth: Theme.listWhenWidth
+                            text: "WHEN"
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontTiny
+                            font.letterSpacing: 0.6
+                        }
+                        Item {
+                            visible: !page.hasSelection
+                            Layout.preferredWidth: Theme.listActionWidth
+                        }
+                    }
+                }
 
-                            Label {
-                                Layout.fillWidth: true
-                                // Without this the layout treats the full file
-                                // name as the minimum and pushes the actions
-                                // out instead of eliding (T7.3).
-                                Layout.minimumWidth: 0
-                                text: row.modelData.name
-                                // textDim rather than textMuted: a selected row
-                                // tints, and muted is 3.6:1 against a tint.
-                                color: row.modelData.exists ? Theme.text : Theme.textDim
-                                font.pixelSize: Theme.fontSmall
-                                font.family: Theme.monoFont
-                                elide: Text.ElideMiddle
+                ListView {
+                    id: list
+                    objectName: "library.table"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 0
+                    model: appBridge.history
+                    ScrollBar.vertical: AppScrollBar { }
+
+                    delegate: Rectangle {
+                        id: row
+                        required property var modelData
+                        required property int index
+
+                        readonly property bool isSelected: modelData.index === page.selected
+
+                        width: list.width
+                        // Two lines of text or the 36 px preview, whichever is taller.
+                        height: Math.max(Theme.rowHeight + Theme.xs * 3,
+                                         rowBody.implicitHeight + Theme.sm)
+                        // A selected row is tint + border + weight, never the raw
+                        // accent as text - the accent is a shape, the word stays ink.
+                        color: isSelected ? Theme.accentSoft
+                             : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
+
+                        activeFocusOnTab: true
+
+                        Keys.onReturnPressed: appBridge.selectHistory(isSelected ? -1 : modelData.index)
+                        Keys.onEnterPressed: appBridge.selectHistory(isSelected ? -1 : modelData.index)
+                        Keys.onSpacePressed: appBridge.selectHistory(isSelected ? -1 : modelData.index)
+                        Keys.onDeletePressed: appBridge.removeHistory(modelData.index)
+
+                        RowLayout {
+                            id: rowBody
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: Theme.sm
+
+                            MediaThumb {
+                                Layout.preferredWidth: Theme.listThumbWidth
+                                Layout.preferredHeight: 36
+                                Layout.alignment: Qt.AlignVCenter
+                                source: row.modelData.thumbnail || ""
+                                duration: row.modelData.duration || 0
                             }
 
-                            RowLayout {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: Theme.sm
-
-                                // The kind is a shape as well as a colour/word,
-                                // so video vs subtitle survives greyscale.
-                                Icon {
-                                    visible: row.modelData.detail !== ""
-                                    name: row.modelData.kind === "subtitle" ? "file" : "film"
-                                    color: Theme.textMuted
-                                    width: 12
-                                    height: 12
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 1
 
                                 Label {
                                     Layout.fillWidth: true
+                                    // Without this the layout treats the full file
+                                    // name as the minimum and pushes the actions
+                                    // out instead of eliding (T7.3).
                                     Layout.minimumWidth: 0
-                                    visible: row.modelData.detail !== ""
-                                    text: row.modelData.detail
-                                    color: Theme.textDim
-                                    font.pixelSize: Theme.fontTiny
-                                    elide: Text.ElideRight
+                                    text: row.modelData.name
+                                    color: row.modelData.exists ? Theme.text : Theme.textDim
+                                    font.pixelSize: Theme.fontSmall
+                                    font.family: Theme.monoFont
+                                    font.weight: row.isSelected ? Font.DemiBold : Font.Normal
+                                    elide: Text.ElideMiddle
                                 }
 
-                                Label {
-                                    visible: !row.modelData.exists
-                                    text: "missing from disk"
-                                    color: Theme.warning
-                                    font.pixelSize: Theme.fontTiny
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.sm
+
+                                    // The kind is a shape as well as a colour/word,
+                                    // so video vs subtitle survives greyscale.
+                                    Icon {
+                                        visible: row.modelData.detail !== ""
+                                        name: row.modelData.kind === "subtitle" ? "file" : "film"
+                                        color: Theme.textMuted
+                                        width: 12
+                                        height: 12
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        visible: row.modelData.detail !== ""
+                                        text: row.modelData.detail
+                                        color: Theme.textDim
+                                        font.pixelSize: Theme.fontTiny
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Label {
+                                        visible: !row.modelData.exists
+                                        text: "missing from disk"
+                                        color: Theme.warning
+                                        font.pixelSize: Theme.fontTiny
+                                    }
                                 }
                             }
-                        }
 
-                        Label {
-                            Layout.preferredWidth: 70
-                            Layout.alignment: Qt.AlignVCenter
-                            text: row.modelData.sizeText
-                            color: Theme.textDim
-                            font.pixelSize: Theme.fontSmall
-                        }
-
-                        Label {
-                            Layout.preferredWidth: 120
-                            Layout.alignment: Qt.AlignVCenter
-                            text: row.modelData.when
-                            color: Theme.textDim
-                            font.pixelSize: Theme.fontSmall
-                        }
-
-                        RowLayout {
-                            Layout.preferredWidth: 108
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 2
-
-                            AppButton {
-                                text: "Open"
-                                small: true
-                                variant: "ghost"
-                                enabled: row.modelData.exists
-                                onClicked: appBridge.openDownloadedFile(row.modelData.index)
-                            }
-
-                            AppButton {
-                                text: ""
-                                iconName: "folder"
-                                small: true
-                                variant: "ghost"
-                                enabled: row.modelData.exists
-                                Layout.preferredWidth: Theme.controlHeightSmall
-                                Accessible.name: "Open folder"
-                                tooltip: "Open folder"
-                                onClicked: appBridge.openDownloadedFolder(row.modelData.index)
-                            }
-
-                            AppButton {
-                                id: moreButton
-                                text: ""
-                                iconName: "more"
-                                small: true
-                                variant: "ghost"
-                                Layout.preferredWidth: Theme.controlHeightSmall
-                                Accessible.name: "More actions"
-                                tooltip: "More actions"
-                                onClicked: rowMenu.popup(moreButton)
-                            }
-                        }
-                    }
-
-                    // Low-frequency action, so it lives behind the row's menu
-                    // instead of competing with Open/Folder for width.
-                    Menu {
-                        id: rowMenu
-                        objectName: "library.rowMenu"
-                        width: 176
-                        padding: 4
-
-                        background: Item {
-                            id: menuBg
-
-                            readonly property var _shadow: Theme.shadowFor(Theme.elevationOverlay)
-
-                            Rectangle {
-                                anchors.fill: menuCard
-                                anchors.margins: -3
-                                radius: Theme.radiusMd + 3
-                                color: Theme.shadowColor
-                                opacity: menuBg._shadow.opacity * 0.5
-                            }
-
-                            Rectangle {
-                                anchors.fill: menuCard
-                                anchors.margins: -1
-                                radius: Theme.radiusMd + 1
-                                color: Theme.shadowColor
-                                opacity: menuBg._shadow.opacity
-                            }
-
-                            Rectangle {
-                                id: menuCard
-                                anchors.fill: parent
-                                color: Theme.surfaceRaised
-                                border.width: 1
-                                border.color: Theme.borderStrong
-                                radius: Theme.radiusMd
-                            }
-                        }
-
-                        // Styling goes on the item itself: a Menu shows
-                        // statically declared MenuItems as-is, so `delegate`
-                        // would only reach string/array models.
-                        MenuItem {
-                            id: copyItem
-                            width: rowMenu.availableWidth
-                            height: 32
-                            text: "Copy path"
-
-                            contentItem: Label {
-                                text: copyItem.text
-                                color: Theme.text
+                            Label {
+                                Layout.preferredWidth: Theme.listSizeWidth
+                                Layout.alignment: Qt.AlignVCenter
+                                text: row.modelData.sizeText
+                                color: Theme.textDim
                                 font.pixelSize: Theme.fontSmall
-                                verticalAlignment: Text.AlignVCenter
-                                leftPadding: 10
                             }
 
-                            background: Rectangle {
-                                color: copyItem.highlighted || copyItem.hovered
-                                       ? Theme.accentSoft : "transparent"
-                                radius: Theme.radiusSm
+                            Label {
+                                visible: !page.hasSelection
+                                Layout.preferredWidth: Theme.listWhenWidth
+                                Layout.alignment: Qt.AlignVCenter
+                                text: row.modelData.when
+                                color: Theme.textDim
+                                font.pixelSize: Theme.fontSmall
                             }
 
-                            onTriggered: appBridge.copyDownloadPath(row.modelData.index)
+                            // The inline actions disappear the moment a row is
+                            // selected: the drawer becomes the action surface.
+                            RowLayout {
+                                visible: !page.hasSelection
+                                Layout.preferredWidth: Theme.listActionWidth
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+
+                                AppButton {
+                                    text: "Open"
+                                    small: true
+                                    variant: "ghost"
+                                    enabled: row.modelData.exists
+                                    onClicked: appBridge.launchFile(row.modelData.index)
+                                }
+
+                                AppButton {
+                                    text: "Redownload"
+                                    small: true
+                                    variant: "ghost"
+                                    onClicked: appBridge.redownload(row.modelData.index)
+                                }
+                            }
                         }
-                    }
 
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        width: parent.width
-                        height: 1
-                        color: Theme.borderSoft
-                    }
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width
+                            height: 1
+                            color: Theme.borderSoft
+                        }
 
-                    MouseArea {
-                        id: rowMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.RightButton
-                        onClicked: appBridge.selectHistory(row.modelData.index)
+                        // The whole row is the select target: a plain left click
+                        // toggles it, exactly like the reference ``.lib`` row.
+                        MouseArea {
+                            id: rowMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton
+                            onClicked: appBridge.selectHistory(row.isSelected ? -1 : row.modelData.index)
+                        }
+
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: row.modelData.name
+                        Accessible.selected: row.isSelected
                     }
+                }
+
+                EmptyState {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 180
+                    visible: appBridge.historyCount === 0
+                    title: "Nothing downloaded yet"
+                    body: "Downloads show up here, with the format and subtitle track that were used."
+                    iconName: "history"
                 }
             }
 
-            EmptyState {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 180
-                visible: appBridge.historyCount === 0
-                title: "Nothing downloaded yet"
-                body: "Downloads show up here, with the format and subtitle track that were used."
-                iconName: "history"
+            // ------------------------------------------------------- the drawer
+            // A sibling of the list, pinned at ``drawerWidth``. Its ``entry`` is
+            // resolved here (the page knows the selection index) and handed down.
+            LibraryDrawer {
+                id: drawer
+                Layout.fillHeight: true
+                Layout.preferredWidth: Theme.drawerWidth
+                Layout.alignment: Qt.AlignTop
+                entry: {
+                    var rows = appBridge.history
+                    return page.selected >= 0 && page.selected < rows.length
+                           ? rows[page.selected] : null
+                }
             }
         }
     }
@@ -321,7 +320,7 @@ Item {
     Dialog {
         id: confirmClear
         objectName: "library.clearDialog"
-        title: "Clear download history?"
+        title: "Clear history?"
         modal: true
         anchors.centerIn: parent
         // Escape cancels; there is no default (Enter) action because the only

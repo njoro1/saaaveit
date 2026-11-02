@@ -15,6 +15,23 @@ ApplicationWindow {
     // Set while the Settings page is capturing a chord: every application
     // shortcut has to stand down, or Ctrl+1 would navigate away mid-recording.
     property bool capturingShortcuts: false
+    // Which action is being re-recorded, and the last complaint the bridge
+    // made about a candidate chord ("Ctrl+X is already used by …", etc.).
+    property string capturingAction: ""
+    property string captureMessage: ""
+
+    function startCapturing(action) {
+        window.capturingShortcuts = true
+        window.capturingAction = action
+        window.captureMessage = ""
+        keyCatcher.forceActiveFocus()
+    }
+
+    function finishCapturing() {
+        window.capturingShortcuts = false
+        window.capturingAction = ""
+        window.captureMessage = ""
+    }
 
     x: appBridge.windowX
     y: appBridge.windowY
@@ -179,6 +196,58 @@ ApplicationWindow {
     LogDialog {
         id: logDialog
         anchors.fill: parent
+    }
+
+    // The single chord grabber for shortcut recording. It only exists while a
+    // row is armed; everything it swallows belongs to the chord being built,
+    // and Escape gives the keyboard back without saving.
+    Item {
+        id: keyCatcher
+        objectName: "keyCatcher"
+        anchors.fill: parent
+        visible: window.capturingShortcuts
+        enabled: visible
+        activeFocusOnTab: false
+
+        Keys.onPressed: function (event) {
+            if (event.key === Qt.Key_Escape) {
+                event.accepted = true
+                window.finishCapturing()
+                return
+            }
+            // A lone modifier is only half a chord; wait for the key that
+            // rides with it.
+            if (event.key === Qt.Key_Control || event.key === Qt.Key_Alt
+                    || event.key === Qt.Key_Shift || event.key === Qt.Key_Meta) {
+                event.accepted = true
+                return
+            }
+            var parts = []
+            if (event.modifiers & Qt.ControlModifier) parts.push("Ctrl")
+            if (event.modifiers & Qt.AltModifier) parts.push("Alt")
+            if (event.modifiers & Qt.ShiftModifier) parts.push("Shift")
+            var name = ""
+            if (event.key === Qt.Key_Space)
+                name = "Space"
+            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                name = "Return"
+            else if (event.key === Qt.Key_Tab)
+                name = "Tab"
+            else if (event.text.length === 1 && event.text >= "!" && event.text <= "~")
+                name = event.text.toUpperCase()
+            if (parts.length === 0 || name === "") {
+                window.captureMessage = "Shortcuts need Ctrl or Alt plus a key."
+                event.accepted = true
+                return
+            }
+            var error = appBridge.setShortcut(window.capturingAction,
+                                              parts.join("+") + "+" + name)
+            if (error === "")
+                window.finishCapturing()
+            else
+                window.captureMessage = error
+            event.accepted = true
+        }
     }
 
     // The bridge asks for a page when a command has to leave the current one —

@@ -33,20 +33,23 @@ Item {
     Rectangle {
         id: track
         objectName: "appSwitch.track"
-        width: 32
-        height: 18
-        radius: 9
+        // ``.tg`` in the reference: 40x22 with a 16 px knob at a 3 px inset.
+        width: 40
+        height: 22
+        radius: 11
         anchors.verticalCenter: parent.verticalCenter
         color: root.checked ? Theme.accent : Theme.borderStrong
         Behavior on color { ColorAnimation { duration: Theme.reducedMotion ? 0 : 140 } }
 
         Rectangle {
-            width: 14
-            height: 14
-            radius: 7
-            y: 2
-            x: root.checked ? parent.width - width - 2 : 2
-            color: "#FFFFFF"
+            width: 16
+            height: 16
+            radius: 8
+            y: 3
+            x: root.checked ? parent.width - width - 3 : 3
+            // The knob takes the ink token of whatever sits under it: accent in
+            // dark theme is light, so a white knob would vanish into it.
+            color: Theme.statusOnFill
             Behavior on x { NumberAnimation { duration: Theme.reducedMotion ? 0 : 140 } }
         }
     }

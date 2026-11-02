@@ -276,10 +276,22 @@ QtObject {
     // Sticky sibling panels: download summary, library drawer.
     readonly property int panelWidth: 340
     readonly property int drawerWidth: 320
+    // ``.dl`` / ``.lib`` + ``.drw`` put 28px between the main column and its
+    // sticky sibling.
+    readonly property int columnGap: 28
+    // ``.lib`` grid columns: 64 thumb / flex name / 80 size / 130 when /
+    // 150 actions. When a row is selected the page collapses the last two.
+    readonly property int listThumbWidth: 64
+    readonly property int listSizeWidth: 80
+    readonly property int listWhenWidth: 130
+    readonly property int listActionWidth: 150
     // Step rail: a 28px numeral dot, a 40px gutter, a 2px connector.
     readonly property int stepDotSize: 28
     readonly property int stepGutter: 40
     readonly property int stepLineWidth: 2
+    // ``.step`` bottom padding - the gap between one step's body and the next
+    // step's dot.
+    readonly property int stepGap: 26
     readonly property int heroThumbWidth: comfortable ? 198 : 176
     readonly property int heroTitleSize: 16 + fontBoost
     readonly property int statusMarkSize: 18

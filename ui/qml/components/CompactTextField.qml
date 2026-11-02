@@ -12,7 +12,10 @@ TextField {
 
     font.pixelSize: Theme.fontBody
     color: Theme.text
-    height: Theme.inputHeight
+    // A Layout sizes an item from its implicit height and overrides any `height`
+    // binding, so the field asks for its height here rather than at the call
+    // site.
+    implicitHeight: Theme.inputHeight
     selectByMouse: true
     verticalAlignment: TextInput.AlignVCenter
     placeholderTextColor: Theme.textMuted

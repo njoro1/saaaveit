@@ -108,6 +108,25 @@ def base_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def register_bundled_fonts() -> None:
+    """Add the vendored ``ui/fonts`` TTFs to the application font database.
+
+    ``Theme.qml`` names "Hanken Grotesk" and "IBM Plex Mono" first and falls
+    back to system fonts, so forgetting this only changes the look, never the
+    launch. Both families are SIL OFL 1.1 (``ui/fonts/README.md``). The offscreen
+    tools and the test harness call it too, so what is reviewed is what ships.
+    """
+    from PySide6.QtGui import QFontDatabase
+
+    base = getattr(sys, "_MEIPASS", None) or base_dir()
+    fonts_dir = os.path.join(base, "ui", "fonts")
+    if not os.path.isdir(fonts_dir):
+        return
+    for name in sorted(os.listdir(fonts_dir)):
+        if name.lower().endswith(".ttf"):
+            QFontDatabase.addApplicationFont(os.path.join(fonts_dir, name))
+
+
 def setup_logging(base: str) -> logging.Logger:
     logger = logging.getLogger("saaaveit")
     logger.setLevel(logging.DEBUG)
@@ -197,6 +216,7 @@ class DownloaderBridge(QObject):
         self._selected_codec = "best"
         self._selected_resolution = "best"
         self._selected_subtitle = ""
+        self._pending_redownload = None
         self._info_worker: InfoWorker | None = None
         self._info_gen = 0
 
@@ -461,6 +481,8 @@ class DownloaderBridge(QObject):
             return
         self._info_loading = True
         self._info_error = ""
+        # A new inspection supersedes the last failure.
+        self.dismissFailure()
         self._matrix = {}
         self._best = {}
         self._codecs = []
@@ -486,6 +508,7 @@ class DownloaderBridge(QObject):
         self._info_worker = None
         self._info_loading = False
         if payload.startswith("INFOERROR:"):
+            self._pending_redownload = None
             self._info_error = payload.split("|", 1)[-1].strip()
             self.inspectChanged.emit()
             self._set_status(self._info_error)
@@ -494,6 +517,7 @@ class DownloaderBridge(QObject):
         try:
             info = json.loads(payload.split("|", 1)[-1])
         except (ValueError, TypeError):
+            self._pending_redownload = None
             self._info_error = "Could not parse the inspection result."
             self.inspectChanged.emit()
             self._set_status(self._info_error)
@@ -528,6 +552,9 @@ class DownloaderBridge(QObject):
         self._selected_codec = self._codecs[0] if self._codecs else "best"
         self._selected_resolution = "best"
         self._selected_subtitle = self._default_track_for(info)
+        # The fresh result has landed: whatever failed before belongs to a
+        # superseded attempt.
+        self.dismissFailure()
         self.inspectChanged.emit()
         self._set_status(
             f"Inspected “{self._title}” — {len(self._codecs)} codec(s), "
@@ -535,6 +562,10 @@ class DownloaderBridge(QObject):
             f"{len(self._subtitle_tracks)} subtitle track(s)."
         )
         self._set_status_state(STATUS_READY)
+        # After the inspection status: a redownload that refuses to start
+        # ("that track is no longer offered") must overwrite it, not be
+        # overwritten by it.
+        self._run_pending_redownload()
 
     def _default_track_for(self, info: dict) -> str:
         mode = (self._default_subtitle_track or "original").strip().lower()
@@ -972,11 +1003,20 @@ class DownloaderBridge(QObject):
                 self.downloadChanged.emit()
                 self._set_status(reason)
                 self._set_status_state(STATUS_FAILED)
+                self._set_failure(
+                    "format",
+                    "That pick has no stream",
+                    reason,
+                    "Choose another cell in step 2 - or use Best available.",
+                )
                 return False
         if include_subtitle and not self._selected_subtitle and not video:
             return False
 
         self._op_gen += 1
+        # A new operation supersedes the last failure; the banner survives a
+        # finish, but a fresh start is a fresh slate.
+        self.dismissFailure()
         self._cancel_requested = False
         self._download_running = True
         self._progress = 0
@@ -1083,6 +1123,7 @@ class DownloaderBridge(QObject):
                 message = rest.strip()
                 self._download_error = message
                 self._download_status += f"[error] {message}\n"
+                self._classify_failure(message)
             else:
                 self._video_outcome = "ok"
                 self._downloaded_video = rest.strip()
@@ -1098,6 +1139,7 @@ class DownloaderBridge(QObject):
                 message = rest.strip()
                 self._download_error = message
                 self._download_status += f"[error] {message}\n"
+                self._classify_failure(message)
             else:
                 self._subtitle_outcome = "ok"
                 self._downloaded_subtitle = rest.strip()
@@ -1284,14 +1326,45 @@ class DownloaderBridge(QObject):
 
     @Slot(int)
     def redownload(self, index: int) -> None:
+        """Revisit an entry the way the prototype does.
+
+        Navigate to Download, load the entry's URL, inspect - and then, when
+        the inspection lands, start what was recorded (the video, or that one
+        subtitle track). The pending note is cleared in ``_on_info_done`` on
+        both paths, so it can never double-fire.
+        """
         entry = self._entry(index)
         if not entry:
             return
-        if entry.get("kind") == "subtitle":
-            self.selectedSubtitleTrack = self._track_code_from_label(entry.get("detail", ""))
-            if not self._selected_subtitle:
-                self._set_status("Pick the subtitle track on the Download screen.")
+        url = str(entry.get("url") or "").strip()
+        if not url:
+            self._set_status("That entry was saved without a source URL.")
+            return
+        if self._download_running:
+            self._set_status("Finish or cancel the running download first.")
+            return
+        self._pending_redownload = {
+            "kind": entry.get("kind") or "video",
+            "detail": entry.get("detail") or "",
+        }
+        self.requestTab.emit(0)
+        if url == self._url:
+            self.inspect()
+        else:
+            self.url = url
+
+    def _run_pending_redownload(self) -> None:
+        pending, self._pending_redownload = self._pending_redownload, None
+        if not pending:
+            return
+        if pending["kind"] == "subtitle":
+            code = self._track_code_from_label(pending["detail"])
+            if not code:
+                self._set_status(
+                    "That subtitle track is no longer offered. Pick another "
+                    "one on the Download screen.")
                 return
+            self.selectedSubtitleTrack = code
             self.downloadSubtitleOnly()
         else:
             self.download()
@@ -1470,6 +1543,56 @@ class DownloaderBridge(QObject):
         self._failure_detail = detail
         self._failure_remediation = remedy
         self.failureChanged.emit()
+
+    def _classify_failure(self, message: str) -> None:
+        """Turn a worker error line into the banner's four fields.
+
+        The extractor only reads - it never re-raises. An unrecognised error
+        still deserves a banner, so the fallback keeps the raw detail and a
+        generic remedy rather than swallowing it.
+        """
+        low = (message or "").lower()
+        detail = " ".join((message or "").split())[:420]
+        match = re.search(r"http error (\d{3})", low)
+        status = match.group(1) if match else ""
+        if (status in ("401", "403", "407") or "login required" in low
+                or "sign in" in low or "cookies" in low):
+            self._set_failure(
+                "restricted",
+                "This video is gated",
+                detail or "The host asked for credentials we do not have.",
+                "It may need a sign-in, an older-age check, or a premium "
+                "account. Open the link in your browser to confirm; this app "
+                "never stores accounts.",
+            )
+        elif (status in ("404", "410") or "not available" in low
+                or "private video" in low or "removed" in low
+                or "members only" in low):
+            self._set_failure(
+                "unavailable",
+                "This video is not available",
+                detail or "The host says it is gone.",
+                "It may be private, deleted, or region-locked. Double-check "
+                "the URL, then try a video you know is public.",
+            )
+        elif ("timed out" in low or "getaddrinfo" in low or "proxy" in low
+                or "unable to connect" in low or "network" in low
+                or "connection reset" in low or "Temporary failure" in low):
+            self._set_failure(
+                "network",
+                "The network gave up",
+                detail or "The connection dropped mid-request.",
+                "Check your connection (or proxy) and retry. A part-fetched "
+                "file resumes where it stopped.",
+            )
+        else:
+            self._set_failure(
+                "error",
+                "The download failed",
+                detail or "No detail came back from the fetcher.",
+                "Open the log for the full error text, fix what it points "
+                "at, then retry.",
+            )
 
     @Slot()
     def dismissFailure(self) -> None:

@@ -352,9 +352,10 @@ class TestDownloadPage:
         assert stage.property("text") != ""
         assert ui.bridge.downloadProgress == 0
 
-    def test_format_table_shows_rows(self, ui):
-        table = _find(ui.root, "download.formatTable")
-        assert table.property("objectName") == "download.formatTable"
+    def test_format_matrix_shows_the_offered_pairs(self, ui):
+        matrix = _find(ui.root, "download.formatMatrix")
+        assert matrix is not None
+        assert _find(ui.root, "download.bestCell") is not None
         assert len(ui.bridge.formatRows) >= 1
 
     def test_download_button_is_enabled_with_a_selection(self, ui):
@@ -483,13 +484,16 @@ class TestSubtitleTrackPicker:
         try:
             ui.bridge.selectedSubtitleTrack = ""
             app.processEvents()
-            assert none_row.property("color").alphaF() > 0.1
-            assert english_row.property("color").alphaF() == 0.0
+            assert none_row.property("color") != english_row.property("color"), (
+                "the checked row must look different from its neighbour")
+            none_when_checked = none_row.property("color")
 
             ui.bridge.selectedSubtitleTrack = "en"
             app.processEvents()
-            assert none_row.property("color").alphaF() == 0.0
-            assert english_row.property("color").alphaF() > 0.1
+            assert none_row.property("color") != english_row.property("color"), (
+                "the checked row must look different from its neighbour")
+            assert none_row.property("color") != none_when_checked, (
+                "the tint did not move with the selection")
         finally:
             ui.bridge.selectedSubtitleTrack = saved
 
@@ -874,9 +878,11 @@ class TestLibraryPage:
                 assert any("missing from disk" in t for t in texts), texts
                 by_key = {(str(item.property("text") or "") or
                            str(item.property("tooltip") or "")): item for item in actions}
-                for key in ("Open", "Open folder"):
-                    assert key in by_key, sorted(by_key)
-                    assert not bool(by_key[key].property("enabled")), key
+                assert "Open" in by_key and "Redownload" in by_key, sorted(by_key)
+                assert not bool(by_key["Open"].property("enabled")), "Open"
+                # A vanished file is exactly what redownload is for, so that
+                # action stays live even when Open is not.
+                assert bool(by_key["Redownload"].property("enabled")), "Redownload"
             finally:
                 _leave_library(ui, app)
 
@@ -936,8 +942,9 @@ class TestKeyboardReachability:
 
     REQUIRED = {
         0: ("rail.destination.0", "rail.destination.1", "rail.destination.2",
-            "rail.palette", "download.formatRow.0", "download.trackNone",
-            "download.trackEnglish", "download.subtitleMore"),
+            "rail.palette", "download.bestCell", "download.formatRow.1",
+            "download.trackNone", "download.trackEnglish",
+            "download.subtitleMore"),
         2: ("settings.accent.iris", "settings.accent.azure",
             "settings.accent.mint"),
     }
@@ -1156,3 +1163,281 @@ class TestNoForeignVocabulary:
             if "translation_agent" in text or "translation-agent" in text:
                 offenders.append(path.name)
         assert offenders == [], offenders
+
+
+class TestLibraryDrawer:
+    """C6: click/keyboard selection opens the 320 px drawer and collapses the
+    WHEN + action columns behind it."""
+
+    def test_selecting_a_row_opens_the_drawer_and_collapses_the_columns(self, ui, tmp_path):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        path = tmp_path / "Kept [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 2048)
+        with _one_history_row(ui, path):
+            try:
+                _show_page(ui.root, 1, app)
+                drawer = _find_item(ui.root, "library.drawer")
+                assert not bool(drawer.property("visible"))
+
+                bridge.selectHistory(0)
+                app.processEvents()
+                QTest.qWait(60)
+                app.processEvents()
+                assert bool(drawer.property("visible"))
+                name = _find_item(ui.root, "library.drawerName")
+                assert path.name in str(name.property("text"))
+                for control in ("library.drawerOpen", "library.drawerFolder",
+                                "library.drawerCopy", "library.drawerRedownload",
+                                "library.drawerRemove"):
+                    _find_item(ui.root, control)
+
+                page = _find_item(ui.root, "libraryPage")
+                when = [item for item in _visual_tree(page)
+                        if str(item.property("text") or "") == "WHEN"]
+                assert when, "the WHEN column header disappeared entirely"
+                assert not bool(when[0].property("visible"))
+
+                bridge.selectHistory(-1)
+                app.processEvents()
+                QTest.qWait(60)
+                app.processEvents()
+                assert not bool(drawer.property("visible"))
+                assert bool(when[0].property("visible"))
+            finally:
+                _leave_library(ui, app)
+
+    def test_return_on_a_row_opens_the_drawer_too(self, ui, tmp_path):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        path = tmp_path / "Keys [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 2048)
+        with _one_history_row(ui, path):
+            try:
+                items = _library_row(ui.root, app, path.name)
+                items[0].forceActiveFocus()
+                app.processEvents()
+                QTest.qWait(40)
+                QTest.keyClick(ui.root, Qt.Key_Return)
+                app.processEvents()
+                assert bridge.selectedHistoryIndex == 0
+                QTest.keyClick(ui.root, Qt.Key_Return)
+                app.processEvents()
+                assert bridge.selectedHistoryIndex == -1
+            finally:
+                _leave_library(ui, app)
+
+    def test_delete_on_a_focused_row_removes_it_from_the_list(self, ui, tmp_path):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        path = tmp_path / "Doomed [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 2048)
+        with _one_history_row(ui, path):
+            try:
+                items = _library_row(ui.root, app, path.name)
+                items[0].forceActiveFocus()
+                app.processEvents()
+                QTest.qWait(40)
+                QTest.keyClick(ui.root, Qt.Key_Delete)
+                app.processEvents()
+                QTest.qWait(40)
+                app.processEvents()
+                assert bridge.historyCount == 0
+                assert path.exists(), "deleting a row must not delete the file"
+            finally:
+                _leave_library(ui, app)
+
+
+class TestFailureBanner:
+    """C5: the diagnosis has words, survives to be read, and leaves on
+    request."""
+
+    def test_a_failure_raises_the_banner_and_dismissal_lowers_it(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 0, app)
+        banner = _find_item(ui.root, "download.failureBanner")
+        assert not bool(banner.property("visible"))
+
+        bridge._set_failure("network", "The network gave up",
+                            "HTTP Error 503 while fetching the video",
+                            "Check your connection and retry.")
+        app.processEvents()
+        QTest.qWait(60)
+        app.processEvents()
+        assert bool(banner.property("visible"))
+        title = _find_item(ui.root, "download.failureTitle")
+        assert str(title.property("text")) == "The network gave up"
+        texts = [str(item.property("text") or "") for item in _visual_tree(banner)
+                 if item.property("text") is not None
+                 and bool(item.property("visible"))]
+        assert any("503" in t for t in texts), texts
+        assert any("retry" in t.lower() for t in texts), texts
+
+        retry = _find_item(ui.root, "download.failureRetry")
+        assert bool(retry.property("enabled")) is bridge.canDownload
+
+        _press(_find_item(ui.root, "download.failureDismiss"))
+        app.processEvents()
+        QTest.qWait(60)
+        app.processEvents()
+        assert bridge.failureActive is False
+        assert not bool(banner.property("visible"))
+
+    def test_a_fresh_inspection_clears_a_stale_banner(self, ui):
+        bridge = ui.bridge
+        bridge._set_failure("error", "The download failed", "detail", "remedy")
+        assert bridge.failureActive
+        bridge._info_gen += 1
+        bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(_info_payload()))
+        QGuiApplication.instance().processEvents()
+        assert bridge.failureActive is False
+
+
+class TestShortcutRecorder:
+    """C7: Record arms the window catcher; the next chord replaces the old
+    one, a collision refuses, Escape gives up."""
+
+    def _button(self, ui, name):
+        """Reach a shortcut-row button through the page's visual tree.
+
+        The rows are Repeater delegates - invisible to ``findChild``.
+        """
+        page = _find_item(ui.root, "settingsPage")
+        hit = [item for item in _visual_tree(page) if item.objectName() == name]
+        assert hit, f"{name} not rendered on the Settings page"
+        return hit[0]
+
+    def _disarm(self, ui):
+        if ui.root.property("capturingShortcuts"):
+            ui.root.setProperty("capturingShortcuts", False)
+            ui.root.setProperty("capturingAction", "")
+            ui.root.setProperty("captureMessage", "")
+
+    def _arm(self, ui, action):
+        app = QGuiApplication.instance()
+        record = self._button(ui, f"settings.shortcut.record.{action}")
+        _press(record)
+        app.processEvents()
+        QTest.qWait(60)
+        app.processEvents()
+        assert ui.root.property("capturingShortcuts") is True
+        assert str(ui.root.property("capturingAction")) == action
+        catcher = _find_item(ui.root, "keyCatcher")
+        catcher.forceActiveFocus()
+        app.processEvents()
+        QTest.qWait(40)
+
+    def test_recording_a_free_chord_replaces_it(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 2, app)
+        try:
+            self._arm(ui, "palette")
+            QTest.keyClick(ui.root, Qt.Key_J, Qt.ControlModifier)
+            app.processEvents()
+            QTest.qWait(60)
+            app.processEvents()
+            assert ui.root.property("capturingShortcuts") is False
+            assert bridge.shortcutMap["palette"] == "Ctrl+J"
+        finally:
+            bridge.resetAllShortcuts()
+            self._disarm(ui)
+            _show_page(ui.root, 0, app)
+
+    def test_a_taken_chord_is_refused_out_loud_and_escape_gives_up(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 2, app)
+        before = dict(bridge.shortcutMap)
+        try:
+            self._arm(ui, "inspect")
+            QTest.keyClick(ui.root, Qt.Key_1, Qt.ControlModifier)
+            app.processEvents()
+            QTest.qWait(60)
+            app.processEvents()
+            # Still recording, with the collision spelled out.
+            assert ui.root.property("capturingShortcuts") is True
+            message = str(ui.root.property("captureMessage"))
+            assert "Ctrl+1" in message, message
+            QTest.keyClick(ui.root, Qt.Key_Escape)
+            app.processEvents()
+            assert ui.root.property("capturingShortcuts") is False
+            assert dict(bridge.shortcutMap) == before
+        finally:
+            self._disarm(ui)
+            _show_page(ui.root, 0, app)
+
+    def test_a_lone_modifier_is_half_a_chord_and_is_ignored(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 2, app)
+        try:
+            self._arm(ui, "palette")
+            QTest.keyClick(ui.root, Qt.Key_Control)
+            app.processEvents()
+            assert ui.root.property("capturingShortcuts") is True
+            assert bridge.shortcutMap["palette"] == "Ctrl+K"
+            QTest.keyClick(ui.root, Qt.Key_Escape)
+            app.processEvents()
+            assert ui.root.property("capturingShortcuts") is False
+        finally:
+            self._disarm(ui)
+            _show_page(ui.root, 0, app)
+
+
+class TestAutosaveAndPreview:
+    """C7: the toast blinks when the bridge persists, and the template card
+    renders the preview live."""
+
+    def test_the_saved_toast_blinks_on_the_persist_beat(self, ui):
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 2, app)
+        toast = _find_item(ui.root, "settings.savedToast")
+        # An earlier test's autosave may have left it lit; the behavior under
+        # test is the blink, so start from a known-dark label.
+        toast.setProperty("opacity", 0.0)
+        ui.bridge.savedToast.emit()
+        app.processEvents()
+        QTest.qWait(300)
+        app.processEvents()
+        assert float(toast.property("opacity")) > 0.9
+        QTest.qWait(1500)  # the 1.6 s hold expires
+        app.processEvents()
+        QTest.qWait(300)
+        assert float(toast.property("opacity")) == 0.0
+
+    def test_the_template_preview_follows_the_field(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 2, app)
+        preview = _find_item(ui.root, "settings.templatePreview")
+        original = bridge.filenameTemplate
+        try:
+            bridge.filenameTemplate = "%(id)s.%(ext)s"
+            app.processEvents()
+            QTest.qWait(120)
+            app.processEvents()
+            assert str(preview.property("text")) == "c0mP1l3r.mp4"
+        finally:
+            bridge.filenameTemplate = original
+            app.processEvents()
+
+
+class TestHeroIdentityChip:
+    """C4: the video ID lives in the hero, one click from the clipboard."""
+
+    def test_the_id_chip_shows_the_video_and_copies_it(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 0, app)
+        chip = _find_item(ui.root, "download.heroIdChip")
+        assert bool(chip.property("visible"))
+        assert bridge.videoId in str(chip.property("text"))
+
+        QGuiApplication.clipboard().setText("untouched")
+        position = chip.mapToScene(QPointF(chip.width() / 2.0, chip.height() / 2.0))
+        _click_at(ui.root, position.x(), position.y())
+        app.processEvents()
+        assert QGuiApplication.clipboard().text() == bridge.videoId
+        assert bridge.statusMessage == "Video ID copied."

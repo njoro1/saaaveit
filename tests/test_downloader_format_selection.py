@@ -1,6 +1,6 @@
-"""QML-level regression: a pick in the format dropdowns must reach the bridge.
+"""QML-level regression: a pick in the format matrix must reach the bridge.
 
-Historical bug — and the reason the download ignored the dropdowns entirely:
+Historical bug — and the reason the download ignored the pickers entirely:
 a selection property declared as ``@Property(object)`` is registered by PySide6
 with the type ``PySide::PyObjectWrapper``. The QML engine *refuses to write*
 that type ("Cannot assign int to PySide::PyObjectWrapper"), so every resolution
@@ -8,8 +8,11 @@ pick was silently discarded. The bridge kept its default ("best"), which
 resolves to the highest-quality stream — while the UI happily showed the
 resolution the user had just chosen.
 
-These tests drive the real ``ComboBox`` objects in ``Main.qml`` so the write
-path (QML -> PySide6 -> Python setter) is exercised, not just the logic.
+The dropdowns are gone; the matrix replaced them, and the write path now runs
+through ``appBridge.pickFormat(codec, resolution)`` — one slot, both halves, so
+the setter-order trap that pair used to have cannot come back. These tests
+still drive the *real QML items* (cell click -> signal -> slot) so the whole
+chain is exercised, not just the logic.
 """
 from __future__ import annotations
 
@@ -17,14 +20,12 @@ import json
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QMetaObject, Qt
+from PySide6.QtQuick import QQuickItem
 
 from src import media_source
 
 QML_DIR = Path(__file__).resolve().parent.parent / "ui" / "qml"
-
-CODEC_COMBO = "download.codecCombo"
-RES_COMBO = "download.resolutionCombo"
 
 
 def _formats() -> list[dict]:
@@ -73,59 +74,76 @@ def session(qml_main):
     yield bridge, root, warnings
 
 
+def _cells_by_name(root) -> dict:
+    """objectName -> item for every cell the grid has instantiated.
+
+    ``Repeater`` delegates are not in the window's QObject child list, so
+    ``findChild`` cannot reach ``download.formatRow.*`` — the walk has to go
+    through ``childItems()`` from the window's content item.
+    """
+    found: dict[str, QQuickItem] = {}
+
+    def walk(node) -> None:
+        for child in node.childItems():
+            name = child.objectName()
+            if name.startswith("download.formatRow."):
+                found[name] = child
+            walk(child)
+
+    walk(root.contentItem())
+    return found
+
+
+def _cell(bridge, root, codec: str, resolution) -> QQuickItem:
+    """The matrix cell for a pair, found through the same model it renders.
+
+    Cells carry ``download.formatRow.<index>`` where index is the entry's
+    position in ``formatRows``, so the test resolves pair -> index exactly the
+    way the grid does instead of hard-coding a slot layout. Pairs that are not
+    offered have no cell at all, which is itself an assertion below.
+    """
+    cells = _cells_by_name(root)
+    rows = bridge.formatRows
+    for index, row in enumerate(rows):
+        if row["isBest"]:
+            continue
+        if row["codec"] == codec and str(row["resolution"]) == str(resolution):
+            item = cells.get(f"download.formatRow.{index}")
+            assert item is not None, f"formatRow.{index} missing from the grid"
+            return item
+    raise AssertionError(f"no matrix cell for {codec}/{resolution}")
+
+
+def _press(button: QQuickItem) -> None:
+    """Activate a real QML button the way a click would."""
+    assert QMetaObject.invokeMethod(button, "click", Qt.DirectConnection)
+
+
 @pytest.fixture()
 def panel(session):
     bridge, root, warnings = session
-    codec = root.findChild(QObject, CODEC_COMBO)
-    res = root.findChild(QObject, RES_COMBO)
-    assert codec is not None, "codec combo not found (objectName missing?)"
-    assert res is not None, "resolution combo not found (objectName missing?)"
+    assert root.findChild(QQuickItem, "download.bestCell") is not None, (
+        "download.bestCell not found")
     # Back to the default state so the tests do not depend on each other.
-    bridge.selectedCodec = bridge.codecs[0]["id"]
-    bridge.selectedResolution = "best"
+    bridge.pickFormat(bridge.codecs[0]["id"], "best")
     warnings.clear()
-    return bridge, codec, res, warnings
+    return bridge, root, warnings
 
 
-def _pick(combo, index: int) -> None:
-    """Emulate a popup click (ComboBox sets the index, then emits activated)."""
-    combo.setProperty("currentIndex", index)
-    combo.activated.emit(index)
-
-
-def _index_of(combo, value) -> int:
-    model = combo.property("model") or []
-    role = "id" if combo.objectName() == CODEC_COMBO else "value"
-    for i, item in enumerate(model):
-        if str(item[role]) == str(value):
-            return i
-    raise AssertionError(f"{value!r} not in {combo.objectName()} model: {model}")
-
-
-class TestDropdownPicksReachTheBridge:
-    def test_codec_pick_is_stored(self, panel):
-        bridge, codec, _res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
+class TestMatrixPicksReachTheBridge:
+    def test_cell_click_is_stored(self, panel):
+        bridge, root, warnings = panel
+        _press(_cell(bridge, root, "h264", "360"))
         assert bridge.selectedCodec == "h264"
-
-    def test_resolution_pick_is_stored(self, panel):
-        """The regression: this write used to fail with
-        "Cannot assign int to PySide::PyObjectWrapper" and be dropped."""
-        bridge, codec, res, warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
-        _pick(res, _index_of(res, "360"))
-
-        assert bridge.selectedResolution == "360", (
+        assert str(bridge.selectedResolution) == "360", (
             "resolution pick was dropped; warnings: " + "; ".join(warnings))
         assert not [w for w in warnings if "Cannot assign" in w], warnings
 
-    def test_pick_changes_the_download_selector(self, panel):
-        """End to end: picking H.264 + 360p must select the real 360p stream,
-        not the highest-quality one the video happens to serve."""
-        bridge, codec, res, _warnings = panel
-
-        _pick(codec, _index_of(codec, "h264"))
-        _pick(res, _index_of(res, "360"))
+    def test_cell_click_changes_the_download_selector(self, panel):
+        """End to end: pressing the H.264 360p cell must select the real 360p
+        stream, not the highest-quality one the video happens to serve."""
+        bridge, root, _warnings = panel
+        _press(_cell(bridge, root, "h264", "360"))
 
         selector = bridge._selector()
         assert selector == "18", selector
@@ -133,78 +151,59 @@ class TestDropdownPicksReachTheBridge:
         # The default (av1 @ best) would have been the 2160p stream.
         assert "401" not in selector
 
-    def test_switching_codec_keeps_a_valid_pair(self, panel):
-        bridge, codec, res, _warnings = panel
-        _pick(codec, _index_of(codec, "vp9"))
-        _pick(res, _index_of(res, "2160"))
-        assert bridge.selectedResolution == "2160"
-        assert bridge._selector().startswith("315")
+    def test_best_cell_picks_the_escape_hatch(self, panel):
+        bridge, root, _warnings = panel
+        _press(_cell(bridge, root, "h264", "360"))
+        _press(root.findChild(QQuickItem, "download.bestCell"))
+        assert bridge.selectedCodec == "best"
+        assert str(bridge.selectedResolution) == "best"
+        assert bridge._selector() != ""
 
-    def test_combo_stays_in_sync_after_a_pick(self, panel):
-        """The picker must show what was selected — not snap back to "Best"."""
-        bridge, codec, res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
-        idx = _index_of(res, "480")
-        _pick(res, idx)
-        assert bridge.selectedResolution == "480"
-        assert res.property("currentIndex") == idx
+    def test_cells_are_the_only_offered_pairs(self, panel):
+        """h264 serves no 2160p - and the grid must not show a cell for it."""
+        bridge, root, _warnings = panel
+        with pytest.raises(AssertionError, match="no matrix cell"):
+            _cell(bridge, root, "h264", "2160")
 
 
-class TestPickersKeepMirroringTheStore:
-    """They used to declare ``currentIndex: Math.max(0, indexOfValue(…))``.
+class TestCellsMirrorTheStore:
+    """The pressed cell is derived from ``formatRows[*].selected``.
 
-    That is a declarative binding, and ``ComboBox`` assigns ``currentIndex``
-    internally on activation — so from the second pick onward the dropdown
-    stopped following the store. This pins down the imperative re-sync.
+    That flag is the store's own, so any change underneath the grid - an
+    external ``pickFormat``, a codec reset, a re-inspect - has to repaint the
+    grid, not leave it showing a stale press.
     """
 
-    def test_codec_picker_follows_an_external_change_after_a_pick(self, panel):
-        bridge, codec, _res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
+    def test_the_pressed_cell_follows_an_external_pick(self, panel):
+        bridge, root, _warnings = panel
+        _press(_cell(bridge, root, "h264", "360"))
 
-        bridge.selectedCodec = "vp9"
+        bridge.pickFormat("vp9", "720")
 
-        assert codec.property("currentIndex") == _index_of(codec, "vp9"), (
-            "the codec picker stopped mirroring appBridge.selectedCodec "
-            "after the user picked once"
-        )
+        pressed = [r for r in bridge.formatRows if r["selected"]]
+        assert len(pressed) == 1
+        assert pressed[0]["codec"] == "vp9"
+        assert str(pressed[0]["resolution"]) == "720"
 
-    def test_resolution_picker_follows_an_external_change_after_a_pick(self, panel):
-        bridge, codec, res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
-        _pick(res, _index_of(res, "360"))
+    def test_codec_that_cannot_serve_the_row_resets_to_best(self, panel):
+        bridge, root, _warnings = panel
+        _press(_cell(bridge, root, "h264", "1080"))
+        assert str(bridge.selectedResolution) == "1080"
 
-        bridge.selectedResolution = "1080"
-
-        assert res.property("currentIndex") == _index_of(res, "1080"), (
-            "the resolution picker stopped mirroring "
-            "appBridge.selectedResolution after the user picked once"
-        )
-
-    def test_resolution_picker_resyncs_when_the_codec_changes_its_model(
-        self, panel
-    ):
-        """The resolution list is codec-aware, so the model itself changes."""
-        bridge, codec, res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
-        _pick(res, _index_of(res, "1080"))
-        assert bridge.selectedResolution == "1080"
-
-        # vp9 does not serve 1080p: the store resets to "best" and the picker
-        # must show that, not a height the new codec cannot produce.
-        _pick(codec, _index_of(codec, "vp9"))
-
-        assert bridge.selectedResolution == "best"
-        assert res.property("currentIndex") == _index_of(res, "best")
+        # vp9 tops out below 1080p on this video: pickFormat normalises.
+        bridge.pickFormat("vp9", "1080")
+        assert str(bridge.selectedResolution) == "best"
+        assert bridge.selectedOption.get("format_selector")
 
 
 class TestUnavailablePairIsReported:
     def test_unavailable_resolution_has_no_selector(self, panel):
         """h264 serves no 2160p: the option must be empty so the download can
-        refuse, instead of falling back to a "best" stream."""
-        bridge, codec, _res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
-        # 2160 is not offered for h264, so drive the bridge directly.
+        refuse, instead of falling back to a "best" stream. The grid cannot
+        offer this pair, so the store is driven directly - the guard still has
+        to refuse."""
+        bridge, _root, _warnings = panel
+        bridge.selectedCodec = "h264"
         bridge.selectedResolution = "2160"
 
         assert bridge.selectedOption == {}
@@ -213,45 +212,37 @@ class TestUnavailablePairIsReported:
         assert "1080p" in bridge.selectionError
 
     def test_download_button_is_disabled_without_a_selection(self, panel):
-        """The QML Download button is gated on ``selectedOption.format_selector``,
-        so an empty option must mean no download can start."""
-        bridge, codec, _res, _warnings = panel
-        _pick(codec, _index_of(codec, "h264"))
+        bridge, root, _warnings = panel
+        bridge.selectedCodec = "h264"
         bridge.selectedResolution = "2160"
-        assert not (bridge.selectedOption or {}).get("format_selector")
+        button = root.findChild(QQuickItem, "download.downloadButton")
+        assert button is not None, "download.downloadButton not found"
         assert bridge.canDownload is False
 
 
-SELECTION_LABEL = "download.selectedSummary"
 SELECTION_ERROR = "download.selectionError"
+SUMMARY_VIDEO = "download.summaryVideo"
 
 
-class TestSelectionLabelExplainsUnavailablePairs:
+class TestSelectionLabelsExplainUnavailablePairs:
     """The panel must *say* what is wrong, not just refuse silently."""
 
     @pytest.fixture()
     def labeled(self, session):
         bridge, root, warnings = session
-        label = root.findChild(QObject, SELECTION_LABEL)
-        error = root.findChild(QObject, SELECTION_ERROR)
-        assert label is not None, "download.selectedSummary not found"
-        assert error is not None, "download.selectionError not found"
-        bridge.selectedCodec = bridge.codecs[0]["id"]
-        bridge.selectedResolution = "best"
+        error = root.findChild(QQuickItem, SELECTION_ERROR)
+        assert error is not None, f"{SELECTION_ERROR} not found"
+        bridge.pickFormat(bridge.codecs[0]["id"], "best")
         warnings.clear()
-        return bridge, label, error, warnings
+        return bridge, root, error, warnings
 
-    def test_available_pair_shows_the_selection(self, labeled):
-        bridge, label, error, _warnings = labeled
-        bridge.selectedCodec = "h264"
-        bridge.selectedResolution = "360"
-        text = str(label.property("text"))
-        assert text.startswith("Selected:"), text
-        assert "360p" in text, text
+    def test_available_pair_shows_no_error(self, labeled):
+        bridge, root, error, _warnings = labeled
+        _press(_cell(bridge, root, "h264", "360"))
         assert str(error.property("text")) == ""
 
     def test_unavailable_pair_names_the_missing_format(self, labeled):
-        bridge, _label, error, _warnings = labeled
+        bridge, _root, error, _warnings = labeled
         bridge.selectedCodec = "h264"
         bridge.selectedResolution = "2160"  # h264 tops out at 1080p
         text = str(error.property("text"))
@@ -260,24 +251,18 @@ class TestSelectionLabelExplainsUnavailablePairs:
         # and it must tell the user what they *can* pick
         assert "1080p" in text, text
 
-    def test_unavailable_pair_is_reported_separately(self, labeled):
-        """An unselectable pair must be visibly different from a valid one:
-        it turns on the dedicated error line and empties the success summary."""
-        bridge, label, error, _warnings = labeled
-        bridge.selectedCodec = "h264"
-        bridge.selectedResolution = "720"
-        assert str(error.property("text")) == ""
-        assert str(label.property("text")).startswith("Selected:")
-
-        bridge.selectedResolution = "2160"
-        assert str(error.property("text")) != ""
-        assert label.property("visible") is False
-
     def test_recovers_when_the_pick_becomes_valid(self, labeled):
-        bridge, label, error, _warnings = labeled
+        bridge, root, error, _warnings = labeled
         bridge.selectedCodec = "h264"
         bridge.selectedResolution = "2160"
         assert "not available" in str(error.property("text")).lower()
-        bridge.selectedResolution = "1080"
+        _press(_cell(bridge, root, "h264", "1080"))
         assert str(error.property("text")) == ""
-        assert str(label.property("text")).startswith("Selected:")
+
+    def test_the_summary_reports_the_pressed_cell(self, labeled):
+        bridge, root, _error, _warnings = labeled
+        video = root.findChild(QQuickItem, SUMMARY_VIDEO)
+        assert video is not None, f"{SUMMARY_VIDEO} not found"
+        _press(_cell(bridge, root, "av1", "2160"))
+        text = str(video.property("text"))
+        assert "2160" in text, text

@@ -23,20 +23,23 @@ Rectangle {
     // also be the plain tone: accent lands at 3.57:1 there. The other tones
     // were set against their own tint and clear AA; `acc` is the one that needs
     // the derived colour.
-    readonly property color _fg: tone === "" ? Theme.textDim
+    readonly property color _fg: tone === "" ? Theme.textMuted
                              : (tone === "acc" ? Theme.accentOnTint
                                                : Theme.toneColor(tone))
 
-    implicitWidth: row.implicitWidth + 16
+    // Reference `.chip` is `padding: 1px 10px`.
+    implicitWidth: row.implicitWidth + 20
     implicitHeight: 22
-    // Reference `.chip` is a pill, not a rounded rect.
+    // The reference's plain chip has nothing behind it and a `b2` hairline;
+    // `.chip.a` - the pressed one - adds the accent tint and a `line` border.
     radius: Theme.radiusCircle
     color: root.clickable && chipHover.hovered
            ? Theme.surfaceAlt
-           : (tone === "" ? Theme.surfaceRaised : Theme.toneTint(tone))
-    border.width: root.clickable ? (root.activeFocus ? 2 : 1) : 0
-    border.color: root.activeFocus ? Theme.accentLine
-                 : root.clickable ? Theme.borderSoft : "transparent"
+           : (tone === "" ? "transparent" : Theme.toneTint(tone))
+    border.width: root.clickable && root.activeFocus ? 2 : 1
+    border.color: root.clickable && root.activeFocus ? Theme.accentLine
+                 : tone === "" ? Theme.borderStrong
+                 : Theme.toneBorder(tone)
     activeFocusOnTab: root.clickable
 
     Keys.onReturnPressed: if (root.clickable) root.clicked()
@@ -58,9 +61,8 @@ Rectangle {
         Label {
             text: root.text
             color: root._fg
-            font.pixelSize: root.mono ? Theme.fontTiny : Theme.fontSmall
+            font.pixelSize: Theme.fontTiny
             font.family: root.mono ? Theme.monoFont : Theme.uiFont
-            font.bold: true
         }
     }
 

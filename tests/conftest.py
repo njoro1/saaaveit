@@ -35,7 +35,7 @@ QSettings.setDefaultFormat(QSettings.IniFormat)
 QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _SETTINGS_DIR)
 QSettings.setPath(QSettings.IniFormat, QSettings.SystemScope, _SETTINGS_DIR)
 
-from app.bridge import DownloaderBridge  # noqa: E402
+from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
 from src import store  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
@@ -47,6 +47,9 @@ def gui_app():
         app = QGuiApplication([])
     else:
         app = QGuiApplication.instance()
+    # Same font database the shipped app builds, so the suite measures the
+    # metrics users will actually see (Theme falls back if this no-ops).
+    register_bundled_fonts()
     yield app
 
 
