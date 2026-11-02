@@ -22,7 +22,12 @@ from PySide6.QtGui import (  # noqa: E402
 )
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
-from app.bridge import DownloaderBridge, base_dir, setup_logging  # noqa: E402
+from app.bridge import (  # noqa: E402
+    DownloaderBridge,
+    base_dir,
+    register_bundled_fonts,
+    setup_logging,
+)
 
 
 def _resource_path(*parts: str) -> str:
@@ -78,8 +83,8 @@ def _app_icon() -> QIcon:
     ``download`` stroke path the QML icon set uses.
     """
     icon = QIcon()
-    accent = QColor("#8A6BFF")
-    ink = QColor("#0A0C11")
+    accent = QColor("#8B8FFF")
+    ink = QColor("#0D0E1A")
     for size in (16, 24, 32, 48, 64, 128, 256):
         pixmap = QPixmap(size, size)
         pixmap.fill(QColor(0, 0, 0, 0))
@@ -126,6 +131,7 @@ def main() -> int:
         os.environ["QT_PLUGIN_PATH"] = plugins_dir
 
     app = QGuiApplication(sys.argv)
+    register_bundled_fonts()
     app.setApplicationName("Saaaveit")
     app.setOrganizationName("Njoro")
     app.setApplicationDisplayName("Saaaveit")
