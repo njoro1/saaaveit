@@ -2,8 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
-// Compact text field matching the mockup's `.field` (inset background, focus
-// ring). Keeps the ``label`` hook used for accessibility and test lookups.
+// Text field matching the reference's `.in`: 44px tall, inset fill, `b2`
+// border, 10px radius, 14px side padding, accent outline on focus. Keeps the
+// ``label`` hook used for accessibility and test lookups.
 TextField {
     id: root
 
@@ -11,12 +12,12 @@ TextField {
 
     font.pixelSize: Theme.fontBody
     color: Theme.text
-    height: Theme.controlHeight
+    height: Theme.inputHeight
     selectByMouse: true
     verticalAlignment: TextInput.AlignVCenter
     placeholderTextColor: Theme.textMuted
-    leftPadding: 10
-    rightPadding: 10
+    leftPadding: 14
+    rightPadding: 14
     activeFocusOnTab: true
 
     Accessible.role: Accessible.EditableText
@@ -24,24 +25,25 @@ TextField {
     Accessible.description: root.placeholderText
 
     background: Item {
-        // 1 px outer glow makes the focused field read even on a busy card.
+        // The reference focuses with a 2px `line` outline *offset* 2px, keeping
+        // the field's own border. A sibling ring is how that offset is drawn
+        // here, since a Rectangle border cannot sit outside its own fill.
         Rectangle {
             anchors.fill: parent
-            anchors.margins: -1
-            radius: Theme.radiusSm + 1
+            anchors.margins: -3
+            radius: Theme.radiusMd + 3
             color: "transparent"
-            border.width: 1
-            border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
+            border.width: 2
+            border.color: Theme.accentLine
             visible: root.activeFocus
         }
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radiusSm
+            radius: Theme.radiusMd
             color: root.echoMode === TextInput.Password ? Theme.fieldSecretBackground : Theme.inset
-            border.width: root.activeFocus ? 2 : 1
-            border.color: root.activeFocus ? Theme.accentLine
-                                            : (root.hovered ? Theme.borderStrong : Theme.border)
+            border.width: 1
+            border.color: root.activeFocus ? "transparent" : Theme.borderStrong
         }
     }
 }

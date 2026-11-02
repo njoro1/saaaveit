@@ -34,7 +34,7 @@ Rectangle {
     Rectangle {
         anchors.fill: surface
         anchors.margins: -2
-        radius: Theme.radiusLg + 2
+        radius: Theme.cardRadius + 2
         color: Theme.shadowColor
         opacity: root._shadow.opacity * 0.5
     }
@@ -42,7 +42,7 @@ Rectangle {
     Rectangle {
         anchors.fill: surface
         anchors.margins: -1
-        radius: Theme.radiusLg + 1
+        radius: Theme.cardRadius + 1
         color: Theme.shadowColor
         opacity: root._shadow.opacity * 0.9
     }
@@ -50,8 +50,12 @@ Rectangle {
     Rectangle {
         id: surface
         anchors.fill: parent
-        radius: Theme.radiusLg
+        radius: Theme.cardRadius
         color: Theme.surface
+        // The reference pairs its cards' shadow with a `b1` hairline; the ring
+        // alone left cards floating on a same-hue page.
+        border.width: 1
+        border.color: Theme.border
     }
 
     ColumnLayout {

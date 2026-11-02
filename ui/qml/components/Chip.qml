@@ -29,7 +29,8 @@ Rectangle {
 
     implicitWidth: row.implicitWidth + 16
     implicitHeight: 22
-    radius: Theme.radiusXs
+    // Reference `.chip` is a pill, not a rounded rect.
+    radius: Theme.radiusCircle
     color: root.clickable && chipHover.hovered
            ? Theme.surfaceAlt
            : (tone === "" ? Theme.surfaceRaised : Theme.toneTint(tone))

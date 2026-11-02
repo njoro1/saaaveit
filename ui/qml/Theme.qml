@@ -1,10 +1,13 @@
 pragma Singleton
 import QtQuick
 
-// Design tokens for the "Subtitle Studio" redesign.
+// Design tokens for the "UI redesign" reference.
 //
 // Every visual value lives here so the whole UI can change appearance from one
-// place, and so the QML maps 1:1 onto the mockups in ``mockups/assets/mock.css``.
+// place, and so the QML maps 1:1 onto ``Saaaveit — UI redesign.html``.
+// Where a reference colour fails the WCAG floors that
+// ``tests/test_theme_contrast.py`` enforces, the nearest passing value is
+// adopted instead — each nudge is recorded at the token.
 //
 // Two axes are pushed in from Main.qml (a singleton cannot reliably read the
 // ``appBridge`` context property):
@@ -30,11 +33,11 @@ QtObject {
     // test_theme_contrast.py` re-derives the ratios from this table, so a
     // "prettier" hex that dips below the bar fails the build.
     readonly property var accentChoices: [
-        { id: "iris",   label: "Iris",   dark: "#8A6BFF", light: "#5B3DF5" },
-        { id: "azure",  label: "Azure",  dark: "#4EA8FF", light: "#1D69C5" },
-        { id: "mint",   label: "Mint",   dark: "#3DD68C", light: "#0E7948" },
-        { id: "amber",  label: "Amber",  dark: "#F5A623", light: "#985B00" },
-        { id: "rose",   label: "Rose",   dark: "#FF5F6D", light: "#C72E3C" }
+        { id: "iris",   label: "Iris",   dark: "#8b8fff", light: "#4a4fd8" },
+        { id: "azure",  label: "Azure",  dark: "#5ab0f0", light: "#1a6fb0" },
+        { id: "mint",   label: "Mint",   dark: "#4cc38a", light: "#17824f" },
+        { id: "amber",  label: "Amber",  dark: "#e5b04a", light: "#946500" },
+        { id: "rose",   label: "Rose",   dark: "#f28aa8", light: "#c23b6a" }
     ]
     property string accentName: "iris"
 
@@ -43,7 +46,7 @@ QtObject {
             if (accentChoices[i].id === name)
                 return dark ? accentChoices[i].dark : accentChoices[i].light
         }
-        return dark ? "#8A6BFF" : "#5B3DF5"
+        return dark ? "#8b8fff" : "#4a4fd8"
     }
 
     // --- Spacing scale (4px base) ----------------------------------------
@@ -78,22 +81,28 @@ QtObject {
     readonly property int fontH1: 26 + fontBoost
 
     // --- Surfaces ---------------------------------------------------------
-    readonly property color background: isDark ? "#0A0C11" : "#F5F6FA"
+    // The reference's four-step ramp: page (`background`), card (`surface`),
+    // banded row / secondary card (`surfaceAlt`), raised or hovered row
+    // (`surfaceRaised`), recessed input (`inset`).
+    readonly property color background: isDark ? "#121418" : "#F3F4F7"
     readonly property color backgroundGlow: isDark
         ? Qt.rgba(0.541, 0.420, 1.0, 0.07) : Qt.rgba(0.357, 0.239, 0.961, 0.06)
-    readonly property color surface: isDark ? "#12161E" : "#FFFFFF"
-    readonly property color surfaceAlt: isDark ? "#161B25" : "#F3F5FA"
-    readonly property color surfaceRaised: isDark ? "#1C2230" : "#E9EDF6"
-    readonly property color inset: isDark ? "#0C0F15" : "#F1F3F9"
+    readonly property color surface: isDark ? "#191C22" : "#FFFFFF"
+    readonly property color surfaceAlt: isDark ? "#20242B" : "#F0F1F5"
+    readonly property color surfaceRaised: isDark ? "#282D36" : "#E5E7EE"
+    readonly property color inset: isDark ? "#0E1013" : "#E9EBF1"
     // The old name for the app-chrome band, kept so nothing that still refers
     // to it breaks.
-    readonly property color headerBackground: isDark ? "#12161E" : "#FFFFFF"
-    readonly property color border: isDark ? "#242B3A" : "#DCE1EC"
+    readonly property color headerBackground: isDark ? "#191C22" : "#FFFFFF"
+    // Reference `b1` is #262b33, which measures 1.199:1 on `surface` — one
+    // thousandth under the 1.2 floor this repo enforces. Lifted to #272c35.
+    readonly property color border: isDark ? "#272C35" : "#E1E4EA"
     // `borderSoft` is the hairline under a card header. It has to survive the
     // WCAG 1.4.11 non-text bar (>= 1.2:1 against `surface`) or it is not a
-    // border, it is a rumour.
-    readonly property color borderSoft: isDark ? "#212938" : "#E1E6F0"
-    readonly property color borderStrong: isDark ? "#2E3749" : "#C6CEDE"
+    // border, it is a rumour. In dark it is indistinguishable from `border`
+    // (the reference's two steps collapse at this luminance).
+    readonly property color borderSoft: isDark ? "#272C35" : "#E3E6EC"
+    readonly property color borderStrong: isDark ? "#343A45" : "#C9CED8"
 
     // --- Elevation --------------------------------------------------------
     // Depth is a system value, not a per-component decision: cards may carry
@@ -125,18 +134,19 @@ QtObject {
         return { opacity: 0, blur: 0, yOffset: 0 }
     }
 
-    // Scrim behind overlays (palette, dialogs). Only the alpha differs by
-    // theme; both themes dim toward black.
-    readonly property color scrim: Qt.rgba(0, 0, 0, isDark ? 0.55 : 0.30)
+    // Scrim behind overlays (palette, dialogs). The reference dims toward
+    // black at the same alpha in both themes.
+    readonly property color scrim: Qt.rgba(0, 0, 0, isDark ? 0.50 : 0.50)
 
     // --- Text -------------------------------------------------------------
     // Three steps of the same ramp. All three are read as running text, so all
     // three clear AA (4.5:1) on the *lightest* surface they can land on —
-    // `surfaceRaised` in dark, `background` in light. `textMuted` is the
-    // helper/placeholder step and is the tightest of the three.
-    readonly property color text: isDark ? "#E9ECF3" : "#11141B"
-    readonly property color textDim: isDark ? "#A7B0C2" : "#4B5468"
-    readonly property color textMuted: isDark ? "#828DA6" : "#5E6779"
+    // `surfaceRaised` in dark, `background` in light — and on every accent
+    // tint. `text` is the reference's `tx`; the two helper steps are nudged
+    // from its `mu` (#9aa1ad measures 4.01:1 on a tint), staying the same hue.
+    readonly property color text: isDark ? "#E8EAEE" : "#1A1D24"
+    readonly property color textDim: isDark ? "#B9C0CA" : "#4C5261"
+    readonly property color textMuted: isDark ? "#AAB1BD" : "#565D6D"
 
     // --- Brand / semantics ------------------------------------------------
     readonly property color accent: _accentFor(accentName, isDark)
@@ -146,11 +156,14 @@ QtObject {
     // bright pastels (so they read as text on a near-black page), which means
     // white ink lands at 2.0–4.3:1 on them; a near-black ink clears AA on every
     // swatch and on `error` too. Hence the flip rather than a fixed white.
-    readonly property color accentInk: isDark ? "#0A0C11" : "#FFFFFF"
+    // Reference ink: `#0d0e1a` on the dark fills, white on the light ones.
+    readonly property color accentInk: isDark ? "#0D0E1A" : "#FFFFFF"
     // Legacy alias used by older call sites.
     readonly property color accentText: accentInk
     readonly property color accentSoft: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.14 : 0.10)
-    readonly property color accentLine: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.38 : 0.35)
+    // The reference draws selection borders as `c+'99'` — 60% of the hue, at or
+    // near opaque — so this is far stronger than the old 0.35–0.38.
+    readonly property color accentLine: Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.55 : 0.60)
     // The accent as *text on a tinted surface* — an "available in this codec"
     // chip. Raw accent on accentSoft is 3.57:1 at worst, which is a shape's
     // number; pushing the same hue away from the surface it sits on keeps the
@@ -160,19 +173,19 @@ QtObject {
 
     // Status colours are running text (a chip label, an error row), so they are
     // set by their worst *real* background rather than a plain surface: `Chip`
-    // paints `toneTint(tone)` — 10–11% of the hue over the surface beneath it —
-    // and the darkest light surface is `surfaceRaised`. Measured on the
-    // composited tint, the previous values landed at 3.99–4.05:1, i.e. under AA,
-    // because a tint of a colour is always nearer that colour than the surface
-    // is. The dark theme clears 4.5:1 on its tints already (worst: error, 4.55).
+    // paints `toneTint(tone)` — 10–13% of the hue over the surface beneath it —
+    // and the darkest light surface is `surfaceRaised`. The reference's light
+    // steps (#17824f, #8f6200, #c23b3b, #1a6fb0) land at 3.7–4.4:1 there, and
+    // its dark `error` (#f26d6d) at 3.96 on its own tint, so the four are the
+    // nearest passing values; dark success/warning/info are the reference's.
     //
     // They no longer match the `mint` / `amber` / `rose` accent swatches exactly:
     // those are fills read through `accentInk`, where a deeper value would only
     // muddy the page.
-    readonly property color success: isDark ? "#3DD68C" : "#0C6A3F"
-    readonly property color warning: isDark ? "#F5A623" : "#7D4B00"
-    readonly property color error: isDark ? "#FF5F6D" : "#AA2632"
-    readonly property color info: isDark ? "#4EA8FF" : "#18569F"
+    readonly property color success: isDark ? "#4CC38A" : "#12683F"
+    readonly property color warning: isDark ? "#E5B04A" : "#7B5400"
+    readonly property color error: isDark ? "#FF858A" : "#A33232"
+    readonly property color info: isDark ? "#5AB0F0" : "#165F97"
 
     readonly property color errorHover: Qt.lighter(error, 1.12)
     readonly property color warningHover: Qt.lighter(warning, 1.12)
@@ -183,8 +196,14 @@ QtObject {
     readonly property color infoTint: Qt.rgba(info.r, info.g, info.b, isDark ? 0.13 : 0.10)
     readonly property color accentTint: accentSoft
 
+    // The mark painted *inside* a solid status fill — the step-completed ✓ on a
+    // green dot, the glyph on an error badge. The reference uses a near-black
+    // that reads better on a pastel fill than white does; light theme fills are
+    // deep, so they take white.
+    readonly property color statusOnFill: isDark ? "#06150E" : "#FFFFFF"
+
     // Secret fields (API key) get a recessed background in both themes.
-    readonly property color fieldSecretBackground: isDark ? "#0D1117" : "#E3E8F0"
+    readonly property color fieldSecretBackground: isDark ? "#0E1013" : "#E9EBF1"
 
     // --- Fonts ------------------------------------------------------------
     // Qt takes one family name, never a comma list, so resolve the first
@@ -210,6 +229,9 @@ QtObject {
     }
 
     readonly property string uiFont: pickFamily([
+        // Bundled with the app (``ui/fonts``, SIL OFL) and registered in
+        // main.py, so the reference's own face is the one that always wins.
+        "Hanken Grotesk",
         _systemFont,
         "Segoe UI Variable Text", "Segoe UI", "Inter",
         "Noto Sans", "DejaVu Sans", "Arial"
@@ -217,11 +239,15 @@ QtObject {
     // Monospace is chosen from a list for the same reason; numeric columns
     // (size, percent, paths) must stay aligned.
     readonly property string monoFont: pickFamily([
+        "IBM Plex Mono",
         "Cascadia Mono", "Cascadia Code", "Consolas",
         "DejaVu Sans Mono", "Courier New"
     ])
 
     // --- Geometry ---------------------------------------------------------
+    // Named after the reference's own classes (``.ri``, ``.in``, ``.cell``,
+    // ``.panel``, ``.drw``, ``.dot``) so a value here can be checked against the
+    // prototype line by line.
     readonly property int controlHeight: comfortable ? 38 : 34
     readonly property int controlHeightSmall: comfortable ? 32 : 28
     readonly property int rowHeight: comfortable ? 40 : 34
@@ -229,9 +255,39 @@ QtObject {
     readonly property int fieldHeight: controlHeight
     readonly property int topbarHeight: 48
     readonly property int railWidth: 64
+    readonly property int railItemSize: 42
     readonly property int statusbarHeight: 30
     // Content stops growing past this width so long rows stay readable.
-    readonly property int contentMaxWidth: 1120
+    readonly property int contentMaxWidth: 1180
+    readonly property int pagePaddingH: 32
+    readonly property int pagePaddingV: 28
+    // Text fields sit taller than buttons (``.in`` 44 vs ``.btn`` 34); selects
+    // keep the reference's 38.
+    readonly property int inputHeight: comfortable ? 48 : 44
+    readonly property int selectHeight: comfortable ? 42 : 38
+    readonly property int primaryActionHeight: comfortable ? 44 : 40
+    // ``.btn`` sits one step tighter than an input's 10px corner.
+    readonly property int buttonRadius: 9
+    // The format matrix: a 72px label column, three equal codec columns, 6px
+    // gutters, 50px cells (56 comfortable).
+    readonly property int matrixLabelWidth: 72
+    readonly property int matrixGap: 6
+    readonly property int matrixCellHeight: comfortable ? 56 : 50
+    // Sticky sibling panels: download summary, library drawer.
+    readonly property int panelWidth: 340
+    readonly property int drawerWidth: 320
+    // Step rail: a 28px numeral dot, a 40px gutter, a 2px connector.
+    readonly property int stepDotSize: 28
+    readonly property int stepGutter: 40
+    readonly property int stepLineWidth: 2
+    readonly property int heroThumbWidth: comfortable ? 198 : 176
+    readonly property int heroTitleSize: 16 + fontBoost
+    readonly property int statusMarkSize: 18
+    // ``radiusLg`` stays for chrome that is not a card; the reference's cards and
+    // drawers are 14, its dialogs 16, its chips a pill.
+    readonly property int cardRadius: 14
+    readonly property int dialogRadius: 16
+    readonly property int radiusCircle: 999
     // Legacy alias.
     readonly property int headerHeight: topbarHeight
 

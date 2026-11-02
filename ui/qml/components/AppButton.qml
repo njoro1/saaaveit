@@ -31,7 +31,7 @@ Button {
     }
 
     implicitHeight: small ? Theme.controlHeightSmall : Theme.controlHeight
-    implicitWidth: Math.max(contentItem.implicitWidth + (small ? 22 : 28),
+    implicitWidth: Math.max(contentItem.implicitWidth + (small ? 20 : 28),
                             small ? Theme.controlHeightSmall : Theme.controlHeight)
     padding: 0
     opacity: enabled ? 1.0 : 0.45
@@ -50,11 +50,13 @@ Button {
     Keys.onEnterPressed: if (root.enabled) root.clicked()
 
     background: Rectangle {
-        radius: root.small ? Theme.radiusXs : Theme.radiusSm
+        radius: Theme.buttonRadius
         color: {
             if (root._primary) return root.hovered ? Theme.accentHover : Theme.accent
-            if (root._danger) return root.hovered ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.22)
-                                                  : Theme.errorTint
+            // `.btn.d` is an outline, not a tint: transparent fill, status
+            // border, status label. Hovering gives it the same fill a plain
+            // button gets.
+            if (root._danger) return root.hovered ? Theme.surfaceRaised : "transparent"
             if (root._ghost || root._link) return root.hovered ? Theme.surfaceAlt : "transparent"
             return root.hovered ? Theme.surfaceRaised : Theme.surfaceAlt
         }
@@ -62,14 +64,13 @@ Button {
         // the resting border so tabbing is always visible.
         border.width: root.activeFocus ? 2 : (root._bordered || root._danger ? 1 : 0)
         border.color: root.activeFocus ? Theme.accentLine
-                      : root._danger
-                        ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.35)
-                        : Theme.border
+                      : root._danger ? Theme.error
+                      : Theme.borderStrong
         Behavior on color { ColorAnimation { duration: Theme.reducedMotion ? 0 : 120 } }
     }
 
     contentItem: RowLayout {
-        spacing: 7
+        spacing: 8
 
         Icon {
             visible: root.iconName !== ""
@@ -84,7 +85,8 @@ Button {
             text: root.text
             color: root.labelColor
             font.pixelSize: root.small ? Theme.fontSmall : Theme.fontBody
-            font.weight: root._primary ? Font.DemiBold : Font.Normal
+            // The reference sets buttons at 500, its primary at 600.
+            font.weight: root._primary ? Font.DemiBold : Font.Medium
             verticalAlignment: Text.AlignVCenter
         }
     }

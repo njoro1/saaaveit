@@ -25,14 +25,14 @@ Rectangle {
         anchors.right: parent.right
         width: 1
         height: parent.height
-        color: Theme.borderSoft
+        color: Theme.border
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: Theme.md
-        anchors.bottomMargin: Theme.md
-        spacing: Theme.xs
+        anchors.topMargin: 12
+        anchors.bottomMargin: 12
+        spacing: 6
 
         Repeater {
             model: root.items
@@ -43,8 +43,8 @@ Rectangle {
                 required property int index
 
                 objectName: "rail.destination." + index
-                Layout.preferredWidth: 52
-                Layout.preferredHeight: 52
+                Layout.preferredWidth: Theme.railItemSize
+                Layout.preferredHeight: Theme.railItemSize
                 Layout.alignment: Qt.AlignHCenter
                 // The rail is the app's primary navigation, so it has to be
                 // walkable: a plain Item is invisible to Tab otherwise.
@@ -57,7 +57,7 @@ Rectangle {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.radiusMd
+                    radius: Theme.radiusLg
                     color: parent.isOn ? Theme.accentSoft
                                        : (railMouse.containsMouse ? Theme.surfaceAlt : "transparent")
                     border.width: stop.activeFocus ? 2 : 0
@@ -67,10 +67,12 @@ Rectangle {
                 Icon {
                     anchors.centerIn: parent
                     name: parent.modelData.icon
+                    // The active icon is a *shape* in accent, which is legal;
+                    // a word in raw accent on this tint would not be.
                     color: parent.isOn ? Theme.accent : Theme.textMuted
-                    strokeWidth: 1.9
-                    width: 22
-                    height: 22
+                    strokeWidth: 1.8
+                    width: 20
+                    height: 20
                 }
 
                 MouseArea {
@@ -98,8 +100,8 @@ Rectangle {
         Item {
             id: paletteStop
             objectName: "rail.palette"
-            Layout.preferredWidth: 52
-            Layout.preferredHeight: 52
+            Layout.preferredWidth: Theme.railItemSize
+            Layout.preferredHeight: Theme.railItemSize
             Layout.alignment: Qt.AlignHCenter
             activeFocusOnTab: true
 
@@ -108,7 +110,7 @@ Rectangle {
 
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusMd
+                radius: Theme.radiusLg
                 color: paletteMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                 border.width: paletteStop.activeFocus ? 2 : 0
                 border.color: Theme.accentLine
@@ -118,8 +120,8 @@ Rectangle {
                 anchors.centerIn: parent
                 name: "keyboard"
                 color: Theme.textMuted
-                width: 22
-                height: 22
+                width: 20
+                height: 20
             }
 
             MouseArea {

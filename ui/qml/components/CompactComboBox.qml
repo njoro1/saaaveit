@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
-// Dropdown matching the mockup's `.select` (inset background, chevron).
+// Dropdown matching the reference's `select`: 38px, card-coloured fill, `b2`
+// border, 10px radius, chevron.
 //
 // Deliberately still a ComboBox: the Saaave codec/resolution regression test
 // drives ``currentIndex`` + ``activated`` on the real control, and the bridge
@@ -15,7 +16,7 @@ ComboBox {
     property bool compact: false
 
     font.pixelSize: Theme.fontBody
-    height: compact ? Theme.controlHeightSmall : Theme.controlHeight
+    height: compact ? Theme.controlHeightSmall : Theme.selectHeight
     leftPadding: 10
     rightPadding: 26
     activeFocusOnTab: true
@@ -33,13 +34,25 @@ ComboBox {
         popup.close()
     }
 
-    background: Rectangle {
-        implicitHeight: root.height
-        radius: Theme.radiusSm
-        color: Theme.inset
-        border.width: root.activeFocus ? 2 : 1
-        border.color: root.activeFocus || root.popup.visible ? Theme.accentLine
-                                                             : (root.hovered ? Theme.borderStrong : Theme.border)
+    background: Item {
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -3
+            radius: Theme.radiusMd + 3
+            color: "transparent"
+            border.width: 2
+            border.color: Theme.accentLine
+            visible: root.activeFocus || root.popup.visible
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusMd
+            color: Theme.surface
+            border.width: 1
+            border.color: root.activeFocus || root.popup.visible
+                          ? "transparent" : Theme.borderStrong
+        }
     }
 
     contentItem: Text {
@@ -124,7 +137,7 @@ ComboBox {
             Rectangle {
                 id: card
                 anchors.fill: parent
-                color: Theme.surfaceRaised
+                color: Theme.surface
                 border.width: 1
                 border.color: Theme.borderStrong
                 radius: Theme.radiusMd
