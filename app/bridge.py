@@ -79,6 +79,14 @@ _SHORTCUT_LABELS = {
     "open_last": "Open last downloaded file",
 }
 
+# The filename-template preview stands a sample video in for the one that has
+# not been inspected yet. Same shape as the reference's own example.
+_TEMPLATE_SAMPLE_FIELDS = {
+    "title": "How Compilers Turn Code into Machines",
+    "id": "c0mP1l3r",
+    "ext": "mp4",
+}
+
 
 def _is_writable_dir(path: str) -> bool:
     if not os.path.isdir(path):
@@ -567,6 +575,13 @@ class DownloaderBridge(QObject):
     def videoId(self) -> str:
         return self._video_id
 
+    @Slot()
+    def copyVideoId(self) -> None:
+        if not self._video_id:
+            return
+        QGuiApplication.clipboard().setText(self._video_id)
+        self._set_status("Video ID copied.")
+
     @Property(str, notify=inspectChanged)
     def videoThumbnail(self) -> str:
         return self._thumbnail
@@ -702,6 +717,27 @@ class DownloaderBridge(QObject):
             self._selected_resolution = value
             self.inspectChanged.emit()
 
+    @Slot(str, "QVariant")
+    def pickFormat(self, codec: str, resolution) -> None:
+        """Select one matrix cell, both halves at once.
+
+        ``selectedCodec``'s setter demotes the resolution to "best" when the new
+        codec has no such row, so a cell click written as two property
+        assignments loses one of them depending on the order. The matrix hands
+        ``resolution`` through as either an int (1080) or the string "best",
+        which is why it is normalised here rather than by the caller.
+        """
+        codec = (codec or "best").strip() or "best"
+        wanted = media_source.normalize_resolution(resolution)
+        family = self._matrix.get(codec) or {}
+        if family and wanted != "best" and str(wanted) not in {str(h) for h in family}:
+            wanted = "best"
+        if codec == self._selected_codec and wanted == self._selected_resolution:
+            return
+        self._selected_codec = codec
+        self._selected_resolution = wanted
+        self.inspectChanged.emit()
+
     @Property(str, notify=inspectChanged)
     def selectionError(self) -> str:
         if not self._matrix and not self._best:
@@ -815,6 +851,30 @@ class DownloaderBridge(QObject):
     @filenameTemplate.setter
     def filenameTemplate(self, value: str) -> None:
         self._set_field("_filename_template", (value or "").strip() or DEFAULT_FILENAME_TEMPLATE)
+
+    def render_template(self, template: str) -> str:
+        """Fill a filename template with sample values, leaving unknown fields.
+
+        The Settings card previews a template before any video is inspected, so
+        the sample has to be the thing that stands in for a real title. A field
+        this app does not know (``%(uploader)s``) stays literal: silently
+        dropping it would hide a typo from the person who just typed it.
+        """
+        template = (template or "").strip() or DEFAULT_FILENAME_TEMPLATE
+        known = _TEMPLATE_SAMPLE_FIELDS
+
+        def fill(match):
+            key = match.group(1)
+            return known.get(key, match.group(0))
+
+        rendered = re.sub(r"%\((\w+)\)s", fill, template)
+        if "%(ext)s" not in template:
+            rendered += ".mp4"
+        return rendered
+
+    @Property(str, notify=formChanged)
+    def filenamePreview(self) -> str:
+        return self.render_template(self._filename_template)
 
     def _out_template(self) -> str:
         return os.path.join(self.downloadDir, self._filename_template)
@@ -1166,6 +1226,44 @@ class DownloaderBridge(QObject):
         self.historyChanged.emit()
 
     @Slot(int)
+    def removeHistory(self, index: int) -> None:
+        """Drop one entry from the list. The file on disk is never touched."""
+        if not 0 <= index < len(self._history):
+            return
+        del self._history[index]
+        if self._selected_history == index:
+            self._selected_history = -1
+        elif self._selected_history > index:
+            # Every row below the removed one moves up; the drawer must follow
+            # the same file rather than the row it used to sit in.
+            self._selected_history -= 1
+        store.save_history(self._settings, self._history)
+        self.historyChanged.emit()
+        self._set_status("Removed from history. The file stays on disk.")
+
+    @Slot(int)
+    def launchFile(self, index: int) -> None:
+        """Open the recorded file with its own default handler."""
+        entry = self._entry(index)
+        if not entry:
+            return
+        path = str(entry.get("path") or "")
+        if not os.path.isfile(path):
+            self._set_status(f"File is missing from disk: {os.path.basename(path)}")
+            return
+        try:
+            os.startfile(path)  # type: ignore[attr-defined]
+        except OSError:
+            self._set_status(f"Could not open: {path}")
+
+    @Slot()
+    def openLastFile(self) -> None:
+        if not self._history:
+            self._set_status("Nothing downloaded yet.")
+            return
+        self.launchFile(0)
+
+    @Slot(int)
     def openDownloadedFile(self, index: int) -> None:
         entry = self._entry(index)
         if entry:
@@ -1472,7 +1570,14 @@ class DownloaderBridge(QObject):
     def shortcutRows(self) -> list:
         values = self._loaded_shortcuts()
         return [
-            {"action": action, "label": label, "sequence": values.get(action, "")}
+            {
+                "action": action,
+                "label": label,
+                "sequence": values.get(action, ""),
+                # A row still on its default has nothing to reset, and the
+                # reference disables the button rather than no-op'ing it.
+                "isDefault": values.get(action) == _SHORTCUT_DEFAULTS.get(action),
+            }
             for action, label in _SHORTCUT_LABELS.items()
         ]
 
@@ -1486,9 +1591,14 @@ class DownloaderBridge(QObject):
         if action not in values:
             return "Unknown action."
         sequence = (sequence or "").strip()
+        # A chord the window manager would never deliver (a bare key, a lone
+        # modifier) is recorded as nothing at all, so refuse it out loud.
+        if sequence and not re.search(r"\b(Ctrl|Alt)\+", sequence, re.IGNORECASE):
+            return "Shortcuts need Ctrl or Alt."
         for other, bound in values.items():
             if other != action and bound == sequence and sequence:
-                return "That shortcut is already in use."
+                return ("“" + sequence + "” is already used by “"
+                        + _SHORTCUT_LABELS.get(other, other) + "”.")
         values[action] = sequence
         changed = {k: v for k, v in values.items() if v != _SHORTCUT_DEFAULTS.get(k)}
         self._shortcuts_json = json.dumps(changed)
@@ -1496,9 +1606,11 @@ class DownloaderBridge(QObject):
         self.shortcutsChanged.emit()
         return ""
 
-    @Slot(str)
-    def resetShortcut(self, action: str) -> None:
-        self.setShortcut(action, _SHORTCUT_DEFAULTS.get(action, ""))
+    @Slot(str, result=str)
+    def resetShortcut(self, action: str) -> str:
+        # Restoring a default can itself collide: two actions whose defaults
+        # were swapped. The caller shows whatever comes back.
+        return self.setShortcut(action, _SHORTCUT_DEFAULTS.get(action, ""))
 
     @Slot()
     def resetAllShortcuts(self) -> None:
@@ -1517,12 +1629,16 @@ class DownloaderBridge(QObject):
 
     @Property("QVariantList", constant=True)
     def environmentRows(self) -> list:
+        # ``id`` exists so a page can ask for particular rows without matching
+        # on their labels; the Environment card shows three of these five, and
+        # yt-dlp's status belongs to Readiness while the app folder belongs to
+        # the folder pickers.
         return [
-            {"label": "App folder", "value": base_dir()},
-            {"label": "Settings store", "value": self._settings.fileName()},
-            {"label": "Log file", "value": os.path.join(base_dir(), "saaaveit.log")},
-            {"label": "yt-dlp", "value": "available" if yt_dlp_available() else "not found"},
-            {"label": "Python", "value": sys.version.split()[0]},
+            {"id": "app_folder", "label": "App folder", "value": base_dir()},
+            {"id": "settings_store", "label": "Settings store", "value": self._settings.fileName()},
+            {"id": "log_file", "label": "Log file", "value": os.path.join(base_dir(), "saaaveit.log")},
+            {"id": "ytdlp", "label": "yt-dlp", "value": "available" if yt_dlp_available() else "not found"},
+            {"id": "python", "label": "Python", "value": sys.version.split()[0]},
         ]
 
     @Property(str, constant=True)

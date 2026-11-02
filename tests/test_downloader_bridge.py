@@ -381,3 +381,216 @@ class TestMediaIdentity:
             assert bridge.videoDuration == 0, bad
             assert bridge.videoChannel == "Some Channel", bad
             assert bridge.videoTitle == "Test video", bad
+
+
+def _wide_payload() -> dict:
+    """Two codecs, two heights: enough for a matrix cell to be wrong."""
+    codecs, resolutions, matrix, best = media_source._build_matrix([
+        {"format_id": "401", "ext": "mp4", "height": 1080,
+         "vcodec": "av01.0.13M.10", "acodec": "none", "tbr": 5000,
+         "filesize": 40_000_000, "fps": 30},
+        {"format_id": "248", "ext": "webm", "height": 720,
+         "vcodec": "vp9", "acodec": "none", "tbr": 2000,
+         "filesize": 18_000_000, "fps": 30},
+        {"format_id": "137", "ext": "mp4", "height": 1080,
+         "vcodec": "avc1.640028", "acodec": "none", "tbr": 4500,
+         "filesize": 36_000_000, "fps": 30},
+        {"format_id": "140", "ext": "m4a", "height": None,
+         "vcodec": "none", "acodec": "mp4a.40.2", "tbr": 128,
+         "filesize": 4_000_000},
+    ])
+    payload = _payload()
+    payload.update(codecs=codecs, resolutions=resolutions, matrix=matrix, best=best)
+    return payload
+
+
+class TestFormatMatrixSelection:
+    """``pickFormat``: one cell, both halves, whatever order they arrive in.
+
+    The two setters cannot be driven in sequence from a matrix cell: assigning
+    a codec demotes a resolution the new codec does not offer, so the click
+    that meant "VP9 at 1080" silently became "VP9 at best" — or, in the other
+    order, a selection that does not exist at all.
+    """
+
+    @pytest.fixture()
+    def wide(self, bridge):
+        _set_url(bridge, "https://example.com/video?v=dQw4w9WgXcQ")
+        _install(bridge, _wide_payload())
+        return bridge
+
+    def test_codec_and_resolution_land_together(self, wide):
+        wide.pickFormat("av1", 1080)
+        assert wide.selectedCodec == "av1"
+        assert wide.selectedResolution == "1080"
+        assert wide.selectionError == ""
+
+    def test_int_and_string_forms_of_the_same_cell_agree(self, wide):
+        for value in (1080, "1080", 1080.0):
+            wide.pickFormat("av1", "best")
+            wide.pickFormat("av1", value)
+            assert wide.selectedResolution == "1080", value
+
+    def test_a_resolution_the_codec_lacks_falls_back_to_best(self, wide):
+        """The matrix would never send this, but a stale binding might."""
+        wide.pickFormat("vp9", 1080)
+        assert wide.selectedCodec == "vp9"
+        assert wide.selectedResolution == "best"
+        assert wide.selectionError == ""
+
+    def test_the_best_cell_clears_both_halves(self, wide):
+        wide.pickFormat("av1", 720)
+        wide.pickFormat("best", "best")
+        assert wide.selectedCodec == "best"
+        assert wide.selectedResolution == "best"
+
+    def test_picking_the_same_cell_twice_is_not_an_edit(self, wide):
+        wide.pickFormat("av1", 1080)
+        before = wide.selectedFormatLabel
+        wide.pickFormat("av1", 1080)
+        assert wide.selectedFormatLabel == before
+
+
+class TestLibraryRowActions:
+    """Remove, launch and open-last: the drawer's buttons, minus the UI."""
+
+    def _seed(self, bridge, tmp_path, names):
+        made = []
+        for name in names:
+            path = tmp_path / name
+            path.write_bytes(b"x" * 64)
+            bridge._record(str(path), "video")
+            made.append(path)
+        return made
+
+    def test_remove_drops_the_entry_and_keeps_the_file(self, bridge, tmp_path):
+        (kept,) = self._seed(bridge, tmp_path, ["one.mp4"])
+        bridge.removeHistory(0)
+        assert bridge.historyCount == 0
+        assert kept.exists()
+        assert "stays on disk" in bridge.statusMessage
+
+    def test_remove_persists_across_a_restart(self, bridge, tmp_path):
+        self._seed(bridge, tmp_path, ["one.mp4", "two.mp4"])
+        bridge.removeHistory(1)
+        store.save_history(bridge._settings, bridge._history)
+        assert [os.path.basename(r["path"]) for r in bridge.history] == ["two.mp4"]
+
+    def test_removing_a_row_above_the_selection_follows_the_file(self, bridge, tmp_path):
+        self._seed(bridge, tmp_path, ["one.mp4", "two.mp4"])
+        # ``_record`` prepends, so the list is [two, one].
+        bridge.selectHistory(1)
+        bridge.removeHistory(0)
+        assert bridge.selectedHistoryIndex == 0
+        assert os.path.basename(bridge.history[0]["path"]) == "one.mp4"
+
+    def test_removing_the_selected_row_closes_the_drawer(self, bridge, tmp_path):
+        self._seed(bridge, tmp_path, ["one.mp4"])
+        bridge.selectHistory(0)
+        bridge.removeHistory(0)
+        assert bridge.selectedHistoryIndex == -1
+
+    def test_remove_out_of_range_changes_nothing(self, bridge, tmp_path):
+        self._seed(bridge, tmp_path, ["one.mp4"])
+        bridge.removeHistory(7)
+        bridge.removeHistory(-1)
+        assert bridge.historyCount == 1
+
+    def test_launch_opens_the_file_itself(self, bridge, tmp_path, monkeypatch):
+        opened = []
+        monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+        self._seed(bridge, tmp_path, ["one.mp4"])
+        bridge.launchFile(0)
+        assert opened == [str(tmp_path / "one.mp4")]
+
+    def test_launching_a_missing_file_says_so(self, bridge, tmp_path, monkeypatch):
+        opened = []
+        monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+        self._seed(bridge, tmp_path, ["one.mp4"])
+        (tmp_path / "one.mp4").unlink()
+        bridge.launchFile(0)
+        assert opened == []
+        assert "missing from disk" in bridge.statusMessage
+
+    def test_open_last_file_uses_the_newest_entry(self, bridge, tmp_path, monkeypatch):
+        opened = []
+        monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+        self._seed(bridge, tmp_path, ["one.mp4", "two.mp4"])
+        bridge.openLastFile()
+        # ``_record`` prepends, so the newest row is also the last file written.
+        assert opened == [str(tmp_path / "two.mp4")]
+
+    def test_open_last_file_on_an_empty_library(self, bridge):
+        bridge.openLastFile()
+        assert bridge.statusMessage == "Nothing downloaded yet."
+
+
+class TestCopyAndPreview:
+    def test_copy_video_id_reaches_the_clipboard(self, bridge, gui_app):
+        from PySide6.QtGui import QGuiApplication
+
+        _install(bridge, _payload())
+        bridge.copyVideoId()
+        assert QGuiApplication.clipboard().text() == "dQw4w9WgXcQ"
+        assert bridge.statusMessage == "Video ID copied."
+
+    def test_copy_video_id_without_a_video_is_a_no_op(self, bridge, gui_app):
+        from PySide6.QtGui import QGuiApplication
+
+        QGuiApplication.clipboard().setText("untouched")
+        bridge.copyVideoId()
+        assert QGuiApplication.clipboard().text() == "untouched"
+
+    def test_preview_fills_known_fields_and_appends_the_extension(self, bridge):
+        assert bridge.filenamePreview == "How Compilers Turn Code into Machines [c0mP1l3r].mp4"
+
+    def test_preview_leaves_an_unknown_field_literal(self, bridge):
+        """A typo must not preview as a filename that will never appear."""
+        bridge.filenameTemplate = "%(title)s-%(uploader)s"
+        assert bridge.filenamePreview == "How Compilers Turn Code into Machines-%(uploader)s.mp4"
+
+    def test_preview_does_not_double_an_explicit_extension(self, bridge):
+        bridge.filenameTemplate = "%(id)s.%(ext)s"
+        assert bridge.filenamePreview == "c0mP1l3r.mp4"
+
+    def test_an_empty_template_falls_back_to_the_default(self, bridge):
+        bridge.filenameTemplate = ""
+        assert bridge.filenameTemplate == store.DEFAULT_FILENAME_TEMPLATE
+        assert bridge.filenamePreview.endswith(".mp4")
+
+
+class TestShortcutBinding:
+    def test_rows_report_which_ones_are_still_default(self, bridge):
+        assert bridge.setShortcut("palette", "Ctrl+Shift+P") == ""
+        rows = {row["action"]: row for row in bridge.shortcutRows}
+        assert rows["palette"]["isDefault"] is False
+        assert rows["inspect"]["isDefault"] is True
+
+    def test_a_bare_key_is_refused(self, bridge):
+        assert "Ctrl or Alt" in bridge.setShortcut("palette", "P")
+        assert bridge.shortcutFor("palette") == "Ctrl+K"
+
+    def test_a_collision_names_the_other_action(self, bridge):
+        message = bridge.setShortcut("palette", "Ctrl+1")
+        assert "Ctrl+1" in message and "Go to Download" in message
+
+    def test_restoring_a_default_can_itself_collide(self, bridge):
+        # Two rows swapped: putting either one back lands on the other's chord.
+        assert bridge.setShortcut("goto_download", "Ctrl+9") == ""
+        assert bridge.setShortcut("palette", "Ctrl+1") == ""
+        message = bridge.resetShortcut("goto_download")
+        assert "Ctrl+1" in message and "Command palette" in message
+        assert bridge.shortcutFor("goto_download") == "Ctrl+9"
+
+    def test_reset_all_shortcuts_returns_every_row(self, bridge):
+        assert bridge.setShortcut("cancel", "Ctrl+J") == ""
+        bridge.resetAllShortcuts()
+        assert all(row["isDefault"] for row in bridge.shortcutRows)
+
+
+class TestEnvironmentRows:
+    def test_rows_carry_ids_so_a_page_can_pick_its_own_three(self, bridge):
+        rows = bridge.environmentRows
+        by_id = {row["id"]: row["label"] for row in rows}
+        assert {"settings_store", "log_file", "python"} <= set(by_id)
+        assert by_id["python"] == "Python"
