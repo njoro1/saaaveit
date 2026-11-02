@@ -47,9 +47,11 @@ Item {
             list.push(entry("Fetch subtitle only", "Download just the subtitle track", appBridge.shortcutFor("download_subtitle"), "download_subtitle"))
         }
         list.push(entry("Open download folder", appBridge.downloadDir, appBridge.shortcutFor("open_folder"), "open_folder"))
+        list.push(entry("Open last downloaded file", "The newest row in the library", appBridge.shortcutFor("open_last"), "open_last"))
         list.push(entry("Toggle light / dark", "Appearance", "", "toggle_theme"))
         list.push(entry("Toggle comfortable spacing", "Appearance", "", "toggle_comfortable"))
         list.push(entry("Toggle reduced motion", "Appearance", "", "toggle_reduced_motion"))
+        list.push(entry("View log", "Everything the app has reported", "", "view_log"))
         list.push(entry("Clear download history", "Library", "", "clear_history"))
         model.clear()
         for (var i = 0; i < list.length; i++)
@@ -119,7 +121,7 @@ Item {
     Rectangle {
         anchors.fill: panel
         anchors.margins: -4
-        radius: Theme.radiusLg + 4
+        radius: Theme.dialogRadius + 4
         color: Theme.shadowColor
         opacity: root._overlayShadow.opacity * 0.5
     }
@@ -127,7 +129,7 @@ Item {
     Rectangle {
         anchors.fill: panel
         anchors.margins: -2
-        radius: Theme.radiusLg + 2
+        radius: Theme.dialogRadius + 2
         color: Theme.shadowColor
         opacity: root._overlayShadow.opacity
     }
@@ -138,21 +140,31 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: 90
         width: Math.min(640, parent.width - 80)
-        height: Math.min(460, parent.height - 140)
-        radius: Theme.radiusLg
+        height: column.implicitHeight
+        radius: Theme.dialogRadius
         color: Theme.surface
         border.width: 1
         border.color: Theme.borderStrong
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 12
-            spacing: 10
+            id: column
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            spacing: 0
 
+            // `.dlg .in` — the search row is flush with the dialog, 52px tall,
+            // and separated from the list by a hairline rather than a box.
             CompactTextField {
                 id: searchField
                 objectName: "palette.search"
                 Layout.fillWidth: true
+                // A Layout lays the item out from its ``Layout.preferredHeight``:
+                // a plain ``height`` binding here is silently overridden, and the
+                // row collapsed to the field's own implicit height.
+                Layout.preferredHeight: 52
+                leftPadding: 16
+                rightPadding: 16
                 placeholderText: "Type a command…"
                 label: "Command palette search"
                 onTextChanged: {
@@ -165,6 +177,16 @@ Item {
                 Keys.onEnterPressed: root.activate(revealed(root.activeIndex))
                 Keys.onEscapePressed: root.close()
 
+                background: Rectangle {
+                    color: "transparent"
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 1
+                        color: searchField.activeFocus ? Theme.accentLine : Theme.border
+                    }
+                }
+
                 function revealed(index) {
                     var rows = root.filtered()
                     return index < rows.length ? rows[index].index : -1
@@ -175,10 +197,10 @@ Item {
                 id: list
                 objectName: "palette.list"
                 Layout.fillWidth: true
-                Layout.fillHeight: true
+                Layout.preferredHeight: Math.min(count * 40 + 12, 340)
                 clip: true
-                spacing: 2
                 model: root.filtered()
+                boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: AppScrollBar { }
 
                 delegate: Rectangle {
@@ -187,50 +209,36 @@ Item {
                     required property int index
 
                     width: list.width
-                    height: 46
-                    radius: Theme.radiusSm
+                    height: 40
                     color: index === root.activeIndex ? Theme.accentSoft
                                                      : (rowMouse.containsMouse ? Theme.surfaceAlt : "transparent")
 
-                    ColumnLayout {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 1
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 16
+                        anchors.rightMargin: 16
+                        spacing: 12
 
                         Label {
                             text: row.modelData.name
-                            // Active row: tint + weight. Accent text on the
-                            // accentSoft fill is below AA for running text.
+                            // The selected row is tinted, so the mark on it is
+                            // weight, not colour: accent on accentSoft is a
+                            // shape's contrast, not a word's.
                             color: Theme.text
                             font.pixelSize: Theme.fontBody
-                            font.bold: index === root.activeIndex
-                            elide: Text.ElideRight
+                            font.weight: index === root.activeIndex ? Font.DemiBold : Font.Normal
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
+                            elide: Text.ElideRight
                         }
 
                         Label {
-                            text: row.modelData.detail
-                            // The active row is tinted; muted is 3.6:1 on a tint.
-                            color: Theme.textDim
+                            visible: row.modelData.shortcut !== ""
+                            text: row.modelData.shortcut
+                            color: Theme.textMuted
                             font.pixelSize: Theme.fontTiny
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 0
+                            font.family: Theme.monoFont
                         }
-                    }
-
-                    Label {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: row.modelData.shortcut
-                        color: Theme.textDim
-                        font.pixelSize: Theme.fontTiny
-                        font.family: Theme.monoFont
                     }
 
                     MouseArea {
@@ -245,6 +253,9 @@ Item {
 
             Label {
                 Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 12
                 visible: root.filtered().length === 0
                 text: "No command matches “" + root.query + "”."
                 color: Theme.textMuted

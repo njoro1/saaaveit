@@ -14,6 +14,10 @@ Button {
     property int iconSize: small ? 14 : 15
     // Hover text; primarily for icon-only buttons whose label is empty.
     property string tooltip: ""
+    // A status-coloured label — the status bar's "2 errors". Only the four
+    // status tones: "acc" would paint raw accent on a word, which is below AA
+    // on any surface it could land on.
+    property string tone: ""
 
     readonly property bool _primary: variant === "primary"
     readonly property bool _danger: variant === "danger"
@@ -23,6 +27,7 @@ Button {
 
     readonly property color labelColor: {
         if (!enabled) return Theme.textMuted
+        if (tone !== "") return Theme.toneColor(tone)
         if (_primary) return Theme.accentInk
         if (_danger) return Theme.error
         if (_link) return Theme.accent
@@ -85,8 +90,9 @@ Button {
             text: root.text
             color: root.labelColor
             font.pixelSize: root.small ? Theme.fontSmall : Theme.fontBody
-            // The reference sets buttons at 500, its primary at 600.
-            font.weight: root._primary ? Font.DemiBold : Font.Medium
+            // The reference sets buttons at 500, its primary at 600, and the
+            // status bar's counts at 600.
+            font.weight: root._primary || root.tone !== "" ? Font.DemiBold : Font.Medium
             verticalAlignment: Text.AlignVCenter
         }
     }

@@ -26,7 +26,7 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 # Importing QtQuick registers QQuickWindow with the binding layer; without it
 # ``rootObjects()[0]`` degrades to a plain QWindow and ``grabWindow()`` is gone.
-from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401
+from PySide6.QtQuick import QQuickItem, QQuickWindow  # noqa: E402,F401
 
 # Isolate persisted state before the bridge is imported/constructed: a
 # screenshot must never read or write the user's real settings and history.
@@ -95,6 +95,20 @@ def _payload() -> dict:
     }
 
 
+def _seed_log(bridge) -> None:
+    """A few lines, including one of each severity, so the log has a shape.
+
+    The status bar's counts come from ``_LOG_ERROR_RE``/``_LOG_WARN_RE``, which
+    match a leading ``ERROR:``/``WARNING:`` — so the seed is written that way
+    rather than by setting the counters.
+    """
+    bridge._append_log(
+        "Inspecting https://example.com/video?v=dQw4w9WgXcQ\n"
+        "WARNING: unable to download the thumbnail, using a placeholder\n"
+        "ERROR: HTTP Error 403: Forbidden while fetching the video\n"
+    )
+
+
 def _settle(app, ms: int = 260) -> None:
     """Pump events for real time so theme ``ColorAnimation``s finish.
 
@@ -109,7 +123,7 @@ def _settle(app, ms: int = 260) -> None:
 
 
 def main() -> int:
-    outdir = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "shots"
+    outdir = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ROOT / "shots"
     outdir.mkdir(parents=True, exist_ok=True)
 
     app = QGuiApplication([])
@@ -121,6 +135,7 @@ def main() -> int:
     bridge._info_gen += 1
     bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(_payload()))
     _seed_history(bridge)
+    _seed_log(bridge)
 
     engine.rootContext().setContextProperty("appBridge", bridge)
     engine.load(QUrl.fromLocalFile(str(QML_DIR / "Main.qml")))
@@ -139,6 +154,26 @@ def main() -> int:
             name = f"page{page}-{theme}.png"
             image.save(str(outdir / name))
             print(name, image.width(), "x", image.height())
+
+    # The two overlays, on top of the Download page. They are the only surfaces
+    # a page shot cannot show, and both are scrollable.
+    root.setProperty("currentPage", 0)
+    bridge._theme_name = "dark"
+    bridge.themeChanged.emit()
+    _settle(app)
+    for object_name, shot in (("commandPalette", "overlay-palette-dark"),
+                              ("logDialog", "overlay-log-dark")):
+        overlay = root.findChild(QQuickItem, object_name)
+        if overlay is None:
+            print("missing overlay:", object_name)
+            continue
+        overlay.setProperty("visible", True)
+        _settle(app)
+        image = root.grabWindow()
+        image.save(str(outdir / f"{shot}.png"))
+        print(f"{shot}.png", image.width(), "x", image.height())
+        overlay.setProperty("visible", False)
+        _settle(app)
     return 0
 
 

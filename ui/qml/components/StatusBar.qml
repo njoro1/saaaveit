@@ -3,12 +3,16 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// 30px footer: the live status line on the left, readiness on the right.
+// 30px footer: the live status line on the left, the log's counts in the
+// middle, readiness on the right. The counts are buttons — the only way to read
+// what actually went wrong is the log itself.
 Rectangle {
     id: root
 
     implicitHeight: Theme.statusbarHeight
     color: Theme.surface
+
+    signal logRequested()
 
     readonly property color stateColor: {
         if (appBridge.statusState === "failed") return Theme.error
@@ -22,7 +26,7 @@ Rectangle {
         anchors.top: parent.top
         width: parent.width
         height: 1
-        color: Theme.borderSoft
+        color: Theme.border
     }
 
     RowLayout {
@@ -48,18 +52,24 @@ Rectangle {
             elide: Text.ElideRight
         }
 
-        Label {
-            visible: appBridge.logWarnCount > 0
-            text: appBridge.logWarnCount + " warning(s)"
-            color: Theme.warning
-            font.pixelSize: Theme.fontSmall
+        AppButton {
+            objectName: "chrome.logErrors"
+            visible: appBridge.logErrorCount > 0
+            variant: "ghost"
+            small: true
+            tone: "err"
+            text: appBridge.logErrorCount + (appBridge.logErrorCount === 1 ? " error" : " errors")
+            onClicked: root.logRequested()
         }
 
-        Label {
-            visible: appBridge.logErrorCount > 0
-            text: appBridge.logErrorCount + " error(s)"
-            color: Theme.error
-            font.pixelSize: Theme.fontSmall
+        AppButton {
+            objectName: "chrome.logWarnings"
+            visible: appBridge.logWarnCount > 0
+            variant: "ghost"
+            small: true
+            tone: "warn"
+            text: appBridge.logWarnCount + (appBridge.logWarnCount === 1 ? " warning" : " warnings")
+            onClicked: root.logRequested()
         }
 
         Label {

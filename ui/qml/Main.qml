@@ -12,6 +12,9 @@ ApplicationWindow {
     id: window
 
     property int currentPage: 0
+    // Set while the Settings page is capturing a chord: every application
+    // shortcut has to stand down, or Ctrl+1 would navigate away mid-recording.
+    property bool capturingShortcuts: false
 
     x: appBridge.windowX
     y: appBridge.windowY
@@ -28,8 +31,17 @@ ApplicationWindow {
     Binding { target: Theme; property: "reducedMotion"; value: appBridge.reducedMotion }
     Binding { target: Theme; property: "accentName"; value: appBridge.accentName }
 
+    // A modal owns the keyboard, so the app's own chords are silent while one
+    // is up — the same rule the reference applies to all three overlays.
+    readonly property bool shortcutsLive: !palette.visible && !logDialog.visible
+                                          && !window.capturingShortcuts
+
     function goTo(index) {
         window.currentPage = Math.max(0, Math.min(2, index))
+    }
+
+    function openLog() {
+        logDialog.open()
     }
 
     function runAction(action) {
@@ -43,6 +55,10 @@ ApplicationWindow {
             appBridge.cancelDownload()
         else if (action === "open_folder")
             appBridge.openDownloadFolder()
+        else if (action === "open_last")
+            appBridge.openLastFile()
+        else if (action === "view_log")
+            window.openLog()
         else if (action === "toggle_theme")
             appBridge.toggleTheme()
         else if (action === "toggle_comfortable")
@@ -53,46 +69,58 @@ ApplicationWindow {
             appBridge.clearHistory()
     }
 
+    // ``shortcutMap`` is a notified property; ``shortcutFor()`` is a slot, so
+    // binding a sequence to it read the value once and never updated again —
+    // a re-recorded chord kept firing the old one until restart.
     Shortcut {
-        sequence: appBridge.shortcutFor("goto_download")
+        sequence: appBridge.shortcutMap.goto_download
+        enabled: window.shortcutsLive
         onActivated: window.goTo(0)
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("goto_library")
+        sequence: appBridge.shortcutMap.goto_library
+        enabled: window.shortcutsLive
         onActivated: window.goTo(1)
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("goto_settings")
+        sequence: appBridge.shortcutMap.goto_settings
+        enabled: window.shortcutsLive
         onActivated: window.goTo(2)
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("palette")
+        sequence: appBridge.shortcutMap.palette
+        enabled: !logDialog.visible && !window.capturingShortcuts
         onActivated: palette.toggle()
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("inspect")
-        enabled: !palette.visible
+        sequence: appBridge.shortcutMap.inspect
+        enabled: window.shortcutsLive
         onActivated: window.runAction("inspect")
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("download")
-        enabled: !palette.visible
+        sequence: appBridge.shortcutMap.download
+        enabled: window.shortcutsLive
         onActivated: window.runAction("download")
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("download_subtitle")
-        enabled: !palette.visible
+        sequence: appBridge.shortcutMap.download_subtitle
+        enabled: window.shortcutsLive
         onActivated: window.runAction("download_subtitle")
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("cancel")
-        enabled: !palette.visible
+        sequence: appBridge.shortcutMap.cancel
+        enabled: window.shortcutsLive
         onActivated: window.runAction("cancel")
     }
     Shortcut {
-        sequence: appBridge.shortcutFor("open_folder")
-        enabled: !palette.visible
+        sequence: appBridge.shortcutMap.open_folder
+        enabled: window.shortcutsLive
         onActivated: window.runAction("open_folder")
+    }
+    Shortcut {
+        sequence: appBridge.shortcutMap.open_last
+        enabled: window.shortcutsLive
+        onActivated: window.runAction("open_last")
     }
 
     ColumnLayout {
@@ -135,7 +163,10 @@ ApplicationWindow {
             }
         }
 
-        StatusBar { Layout.fillWidth: true }
+        StatusBar {
+            Layout.fillWidth: true
+            onLogRequested: window.openLog()
+        }
     }
 
     CommandPalette {
@@ -143,6 +174,18 @@ ApplicationWindow {
         anchors.fill: parent
         onNavigateRequested: function (index) { window.goTo(index) }
         onActionRequested: function (action) { window.runAction(action) }
+    }
+
+    LogDialog {
+        id: logDialog
+        anchors.fill: parent
+    }
+
+    // The bridge asks for a page when a command has to leave the current one —
+    // "Redownload" hands the URL to the Download screen, for instance.
+    Connections {
+        target: appBridge
+        function onRequestTab(index) { window.goTo(index) }
     }
 
     // Page switch: the new page fades in over 160 ms. Reduced motion keeps the

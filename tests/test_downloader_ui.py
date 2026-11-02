@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QMetaObject, QObject, Qt
+from PySide6.QtCore import QEvent, QMetaObject, QObject, QPointF, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
@@ -187,6 +187,64 @@ def _one_history_row(ui, path):
     finally:
         bridge._history = saved
         bridge.historyChanged.emit()
+
+
+@contextlib.contextmanager
+def _log_lines(ui, text: str):
+    """Log content, restored afterwards.
+
+    ``_append_log`` counts severities per chunk, so the counters have to be put
+    back by hand as well as the text.
+    """
+    bridge = ui.bridge
+    saved = (bridge._log_text, bridge._log_error_count, bridge._log_warn_count)
+    bridge._append_log(text)
+    try:
+        yield
+    finally:
+        (bridge._log_text, bridge._log_error_count,
+         bridge._log_warn_count) = saved
+        bridge.logTextChanged.emit()
+        bridge.logCountsChanged.emit()
+
+
+def _press(obj: QObject) -> None:
+    """Click a QML button for real: ``click()`` runs its whole press logic."""
+    _call(obj, "click")
+
+
+def _click_at(window: QObject, x: float, y: float) -> None:
+    """A press and release at a window-local point.
+
+    ``QQuickMouseArea.clicked`` carries a ``QQuickMouseEvent``, so it cannot be
+    emitted from Python; anything that has to test a mouse-only affordance - a
+    scrim, a row, a swatch - has to be clicked with real events.
+    """
+    from PySide6.QtGui import QMouseEvent
+
+    position = QPointF(x, y)
+    buttons = Qt.MouseButton.LeftButton
+    for kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+        QGuiApplication.sendEvent(
+            window,
+            QMouseEvent(kind, position, position, buttons, buttons,
+                        Qt.KeyboardModifier.NoModifier),
+        )
+    QGuiApplication.instance().processEvents()
+
+
+def _app_shortcuts(root: QObject) -> dict:
+    """The window's live chords, as ``sequence -> enabled``.
+
+    ``Shortcut`` is a non-visual item, so the metaobject is the only way to see
+    what the app will actually answer to. The modals' own ``Escape`` handlers
+    share the class; callers key off the bridge's map and never look at those.
+    """
+    out: dict[str, bool] = {}
+    for child in root.findChildren(QObject):
+        if child.metaObject().className().startswith("QQuickShortcut"):
+            out[str(child.property("sequence") or "")] = bool(child.property("enabled"))
+    return out
 
 
 def _call(obj: QObject, method: str) -> None:
@@ -483,6 +541,274 @@ class TestCommandPalette:
         assert stack.property("currentIndex") == 2
         _call(palette, "close")
         ui.root.setProperty("currentPage", 0)
+
+    def test_palette_offers_the_log_and_the_newest_file(self, ui):
+        """Both were engine capabilities with no way in until the redesign."""
+        palette = _find(ui.root, "commandPalette")
+        _call(palette, "open")
+        try:
+            rows = palette.property("entries").toVariant()
+        finally:
+            _call(palette, "close")
+        by_name = {row["name"]: row for row in rows}
+        assert "View log" in by_name, sorted(by_name)
+        assert "Open last downloaded file" in by_name, sorted(by_name)
+        assert by_name["View log"]["action"] == "view_log"
+        assert by_name["Open last downloaded file"]["action"] == "open_last"
+
+    def test_a_row_is_a_name_and_a_chord_and_nothing_else(self, ui):
+        """The reference row is one line: name left, chord right.
+
+        ``detail`` still rides in the entry dict as search fuel, so the point of
+        this test is that it never reaches the screen.
+        """
+        app = QGuiApplication.instance()
+        palette = _find(ui.root, "commandPalette")
+        _call(palette, "open")
+        app.processEvents()
+        QTest.qWait(60)
+        app.processEvents()
+        try:
+            list_view = _find_item(ui.root, "palette.list")
+            texts = _shown_text(_visual_tree(list_view))
+            assert "Go to Download" in texts, texts
+            assert "Ctrl+1" in texts, texts
+            for detail in ("Inspect a URL and download", "Everything the app has reported"):
+                assert detail not in texts, detail
+
+            # A chordless entry paints exactly one label.
+            name = [item for item in _visual_tree(list_view)
+                    if item.property("text") == "View log"]
+            assert name, texts
+            node = name[0]
+            while node.parentItem().parentItem() is not list_view:
+                node = node.parentItem()
+            assert _shown_text(_visual_tree(node)) == ["View log"]
+        finally:
+            _call(palette, "close")
+            app.processEvents()
+
+    def test_the_search_row_is_the_dialogs_flush_line(self, ui):
+        search = _find(ui.root, "palette.search")
+        assert float(search.property("height")) == 52.0
+        assert float(search.property("leftPadding")) == 16.0
+
+    def test_choosing_view_log_raises_the_log_dialog(self, ui):
+        app = QGuiApplication.instance()
+        palette = _find(ui.root, "commandPalette")
+        dialog = _find(ui.root, "logDialog")
+        assert dialog.property("visible") is False
+        palette.actionRequested.emit("view_log")
+        app.processEvents()
+        try:
+            assert dialog.property("visible") is True
+        finally:
+            _call(dialog, "close")
+            app.processEvents()
+
+
+class TestLogDialog:
+    def test_it_starts_closed(self, ui):
+        assert _find(ui.root, "logDialog").property("visible") is False
+
+    def test_opening_it_counts_the_log_and_focuses_close(self, ui):
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        with _log_lines(ui, "ERROR: HTTP Error 403: Forbidden while fetching\n"
+                           "WARNING: unable to download the thumbnail\n"):
+            _call(dialog, "open")
+            app.processEvents()
+            try:
+                assert dialog.property("visible") is True
+                assert (_find(ui.root, "log.counts").property("text")
+                        == "1 warnings · 1 errors")
+                body = str(_find(ui.root, "log.text").property("text"))
+                assert "HTTP Error 403" in body
+                focused = _focused_item(ui.root.contentItem())
+                assert focused is not None and focused.objectName() == "log.close"
+            finally:
+                _call(dialog, "close")
+                app.processEvents()
+
+    def test_an_empty_log_says_so(self, ui):
+        bridge = ui.bridge
+        dialog = _find(ui.root, "logDialog")
+        saved = (bridge._log_text, bridge._log_error_count, bridge._log_warn_count)
+        bridge.clearLog()
+        _call(dialog, "open")
+        QGuiApplication.instance().processEvents()
+        try:
+            assert _find(ui.root, "log.text").property("text") == "(empty)"
+        finally:
+            _call(dialog, "close")
+            (bridge._log_text, bridge._log_error_count,
+             bridge._log_warn_count) = saved
+            bridge.logTextChanged.emit()
+
+    def test_the_body_is_capped_and_the_footer_stays_inside_the_panel(self, ui):
+        """A long log used to push the buttons out of the dialog.
+
+        ``anchors.margins`` is not part of a Layout's implicit height, so a panel
+        sized from ``column.implicitHeight`` alone lost its own padding.
+        """
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        with _log_lines(ui, "".join(f"line {i} of the log\n" for i in range(120))):
+            _call(dialog, "open")
+            app.processEvents()
+            try:
+                scroll = _find_item(ui.root, "log.scroll")
+                assert float(scroll.property("height")) <= 320.0
+                # The ColumnLayout is the scroll's visual parent; the panel is
+                # the layout's, and it is the panel that has to hold the footer.
+                panel = scroll.parentItem().parentItem()
+                close = _find_item(ui.root, "log.close")
+                bottom = (float(close.mapToItem(panel, 0, 0).y())
+                          + float(close.property("height")))
+                assert bottom <= float(panel.property("height")) - 10, bottom
+                surface = ui.root.contentItem()
+                panel_bottom = (float(panel.mapToItem(surface, 0, 0).y())
+                                + float(panel.property("height")))
+                assert panel_bottom <= float(surface.property("height")), panel_bottom
+            finally:
+                _call(dialog, "close")
+                app.processEvents()
+
+    def test_copy_and_clear_reach_the_bridge(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        with _log_lines(ui, "ERROR: HTTP Error 403: Forbidden while fetching\n"):
+            _call(dialog, "open")
+            app.processEvents()
+            try:
+                _press(_find(ui.root, "log.copy"))
+                app.processEvents()
+                assert QGuiApplication.clipboard().text() == bridge.logText
+                _press(_find(ui.root, "log.clear"))
+                app.processEvents()
+                assert bridge.logText == ""
+                assert _find(ui.root, "log.text").property("text") == "(empty)"
+                assert bridge.logErrorCount == 0
+            finally:
+                _call(dialog, "close")
+                app.processEvents()
+
+    def test_escape_closes_it(self, ui):
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        _call(dialog, "open")
+        app.processEvents()
+        QTest.keyClick(ui.root, Qt.Key_Escape)
+        app.processEvents()
+        assert dialog.property("visible") is False
+
+    def test_clicking_the_scrim_closes_it(self, ui):
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        _call(dialog, "open")
+        app.processEvents()
+        surface = ui.root.contentItem()
+        # Bottom-left corner: inside the window, outside the panel, so only the
+        # scrim can take this click.
+        _click_at(ui.root, 20.0, float(surface.property("height")) - 20.0)
+        app.processEvents()
+        assert dialog.property("visible") is False
+
+    def test_the_status_bar_counts_are_the_way_in(self, ui):
+        """The reference turns the footer's two counts into buttons."""
+        app = QGuiApplication.instance()
+        dialog = _find(ui.root, "logDialog")
+        with _log_lines(ui, "ERROR: HTTP Error 403: Forbidden while fetching\n"
+                           "WARNING: unable to download the thumbnail\n"):
+            errors = _find(ui.root, "chrome.logErrors")
+            warnings = _find(ui.root, "chrome.logWarnings")
+            assert str(errors.property("text")) == "1 error"
+            assert str(warnings.property("text")) == "1 warning"
+            _press(errors)
+            app.processEvents()
+            try:
+                assert dialog.property("visible") is True
+            finally:
+                _call(dialog, "close")
+                app.processEvents()
+
+
+class TestApplicationShortcuts:
+    def test_the_shell_binds_sequences_to_the_notified_map(self):
+        """``shortcutFor()`` is a slot: reading it once froze every chord.
+
+        The ten ``sequence:`` lines are counted so a new action cannot be added
+        to the map without being given a ``Shortcut`` too.
+        """
+        source = (QML_DIR / "Main.qml").read_text(encoding="utf-8").splitlines()
+        bound = [line.strip() for line in source if "sequence:" in line]
+        assert len(bound) == 10, bound
+        assert all("appBridge.shortcutMap." in line for line in bound), bound
+
+    def test_re_recording_a_chord_moves_the_live_shortcut(self, ui):
+        bridge = ui.bridge
+        app = QGuiApplication.instance()
+        chords = dict(bridge.shortcutMap)
+        assert chords["goto_download"] == "Ctrl+1"
+        assert "Ctrl+1" in _app_shortcuts(ui.root)
+        try:
+            assert bridge.setShortcut("goto_download", "Ctrl+8") == ""
+            app.processEvents()
+            live = _app_shortcuts(ui.root)
+        finally:
+            bridge.resetAllShortcuts()
+            app.processEvents()
+        assert "Ctrl+8" in live, live
+        assert "Ctrl+1" not in live, live
+
+    def test_an_open_palette_silences_every_chord_but_its_own(self, ui):
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        chords = set(bridge.shortcutMap.values())
+        palette = _find(ui.root, "commandPalette")
+        _call(palette, "open")
+        app.processEvents()
+        try:
+            live = _app_shortcuts(ui.root)
+            own = bridge.shortcutMap["palette"]
+            quieted = [seq for seq in chords if seq != own]
+            assert all(live[seq] is False for seq in quieted), live
+            # Ctrl+K stays live while the palette is up, so it can close it.
+            assert live[own] is True, live
+        finally:
+            _call(palette, "close")
+            app.processEvents()
+        live = _app_shortcuts(ui.root)
+        assert all(live[seq] is True for seq in chords), live
+
+    def test_an_open_log_dialog_silences_the_palette_chord_too(self, ui):
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        dialog = _find(ui.root, "logDialog")
+        _call(dialog, "open")
+        app.processEvents()
+        try:
+            live = _app_shortcuts(ui.root)
+            assert all(live[seq] is False for seq in set(bridge.shortcutMap.values())
+                       if seq), live
+        finally:
+            _call(dialog, "close")
+            app.processEvents()
+
+    def test_recording_a_chord_silences_them_all(self, ui):
+        """While Settings is capturing a key, Ctrl+1 must not navigate away."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        ui.root.setProperty("capturingShortcuts", True)
+        app.processEvents()
+        try:
+            live = _app_shortcuts(ui.root)
+            assert all(live[seq] is False for seq in set(bridge.shortcutMap.values())
+                       if seq), live
+        finally:
+            ui.root.setProperty("capturingShortcuts", False)
+            app.processEvents()
 
 
 class TestLibraryPage:
