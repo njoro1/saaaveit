@@ -31,11 +31,10 @@ Item {
 
     property string status: "ok"
     property string text: ""
-    // 14px glyph by default; `small` drops to 11px for table rows.
-    property bool small: false
 
-    readonly property int glyph: small ? 11 : 14
-    readonly property int ring: small ? 16 : Theme.statusMarkSize
+    // `.m` is one size: an 18px disc with an 11px mark knocked out of it.
+    readonly property int glyph: 12
+    readonly property int ring: Theme.statusMarkSize
     readonly property string iconName: {
         if (status === "ok") return "check"
         if (status === "todo") return "alert"
@@ -62,7 +61,8 @@ Item {
         id: row
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 7
+        // `.leg{gap:8px}` between the mark and its word.
+        spacing: Theme.sm
 
         // The ring: filled for a decided state, an open outline for
         // `unchecked`, a closed muted outline for `na`, so "we don't know yet"
@@ -94,10 +94,12 @@ Item {
             id: label
             visible: root.text !== ""
             text: root.text
+            // `.leg` carries its word in the reading colour at normal weight:
+            // the mark is the only thing that states the verdict, so the word
+            // beside it must not repeat the emphasis.
             color: root.status === "na" || root.status === "unchecked"
-                   ? Theme.textMuted : Theme.textDim
+                   ? Theme.textMuted : Theme.text
             font.pixelSize: root.small ? Theme.fontTiny : Theme.fontSmall
-            font.bold: root.status === "ok" || root.status === "error"
             verticalAlignment: Text.AlignVCenter
         }
     }

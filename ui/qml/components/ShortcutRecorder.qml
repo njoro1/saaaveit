@@ -22,12 +22,17 @@ RowLayout {
 
     Label {
         objectName: "settings.shortcut.value." + root.action
-        text: root.capturing ? "press keys…"
+        text: root.capturing ? "Press keys…"
               : root.sequence === "" ? "unassigned" : root.sequence
         color: root.capturing ? Theme.textMuted : Theme.text
-        font.pixelSize: Theme.fontSmall
+        font.pixelSize: Theme.fontTiny
         font.family: Theme.monoFont
         font.italic: root.capturing
+        // `.key{min-width:120px;text-align:right}` — the column of chords lines
+        // up on its right edge, so a short one still occupies the same space.
+        Layout.preferredWidth: 120
+        Layout.minimumWidth: 120
+        horizontalAlignment: Text.AlignRight
     }
 
     Label {
@@ -40,9 +45,8 @@ RowLayout {
 
     AppButton {
         objectName: "settings.shortcut.record." + root.action
-        text: root.capturing ? "Cancel" : "Record"
+        text: root.capturing ? "Recording…" : "Record"
         small: true
-        variant: root.capturing ? "primary" : "ghost"
         Accessible.name: (root.capturing ? "Cancel recording for " : "Record shortcut for ")
                          + root.action
         onClicked: {
@@ -68,6 +72,4 @@ RowLayout {
                 Window.window.captureMessage = error
         }
     }
-
-    Item { Layout.fillWidth: true }
 }

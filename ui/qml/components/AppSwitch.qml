@@ -48,8 +48,9 @@ Item {
             y: 3
             x: root.checked ? parent.width - width - 3 : 3
             // The knob takes the ink token of whatever sits under it: accent in
-            // dark theme is light, so a white knob would vanish into it.
-            color: Theme.statusOnFill
+            // dark theme is light, so a white knob would vanish into it — and
+            // the reference's fixed white would vanish into a dark *off* track.
+            color: root.checked ? Theme.statusOnFill : Theme.text
             Behavior on x { NumberAnimation { duration: Theme.reducedMotion ? 0 : 140 } }
         }
     }

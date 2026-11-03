@@ -14,8 +14,10 @@ TextField {
     color: Theme.text
     // A Layout sizes an item from its implicit height and overrides any `height`
     // binding, so the field asks for its height here rather than at the call
-    // site.
-    implicitHeight: Theme.inputHeight
+    // site. ``fieldHeight`` exists because a field inside a settings row is
+    // shorter than the page's URL field.
+    property int fieldHeight: Theme.inputHeight
+    implicitHeight: fieldHeight
     selectByMouse: true
     verticalAlignment: TextInput.AlignVCenter
     placeholderTextColor: Theme.textMuted

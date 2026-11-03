@@ -1,38 +1,45 @@
 import QtQuick
 import ".."
 
-// Placeholder geometry for content that is still loading. The 1200 ms pulse is
-// disabled under reduced motion, and the bar is purely decorative: callers put
-// the accessible description on their container.
+// Placeholder geometry for content that is still loading.
+//
+// ``.sk`` is a *sliding* gradient, not a blink: `linear-gradient(90deg,s2,s3,s2)`
+// at ``background-size:200%`` walked left one full cycle every 1100 ms. A block
+// twice the bar's width, moved the same distance, is the same picture without a
+// shader, and the bar is purely decorative: callers put the accessible
+// description on their container.
 Rectangle {
     id: root
 
     implicitHeight: Theme.fontBody
     radius: Theme.radiusXs
-    color: Theme.surfaceRaised
+    color: Theme.surfaceAlt
+    clip: true
 
-    SequentialAnimation {
-        id: pulse
-        running: !Theme.reducedMotion
-        loops: Animation.Infinite
-        // Stopping the loop mid-cycle would leave the bar dimmed.
-        onRunningChanged: if (!running) root.opacity = 1.0
-
-        NumberAnimation {
-            target: root
-            property: "opacity"
-            from: 1.0
-            to: 0.55
-            duration: 600
-            easing.type: Easing.InOutQuad
+    Rectangle {
+        id: sweep
+        // Parked off the left edge: with reduced motion the bar is simply the
+        // flat `s2` track, never a half-lit gradient.
+        x: -width
+        y: 0
+        width: root.width * 2
+        height: root.height
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: Theme.surfaceAlt }
+            GradientStop { position: 0.5; color: Theme.surfaceRaised }
+            GradientStop { position: 1.0; color: Theme.surfaceAlt }
         }
-        NumberAnimation {
-            target: root
-            property: "opacity"
-            from: 0.55
-            to: 1.0
-            duration: 600
-            easing.type: Easing.InOutQuad
+
+        SequentialAnimation on x {
+            running: !Theme.reducedMotion && root.width > 0
+            loops: Animation.Infinite
+            NumberAnimation {
+                from: -sweep.width
+                to: 0
+                duration: 1100
+                easing.type: Easing.Linear
+            }
         }
     }
 }

@@ -13,6 +13,12 @@ Rectangle {
 
     property url source: ""
     property int duration: 0
+    // `.lib .thumb` swaps its glyph by kind: a frame and play triangle for the
+    // video, a folded page for the subtitle.
+    property bool isVideo: true
+    // ``.thumb svg{26px}`` and ``.lib .thumb svg{16px}``: the reference names the
+    // two sizes instead of scaling one, so a 64px slot keeps a readable glyph.
+    property int glyphSize: 26
 
     readonly property bool hasImage: preview.status === Image.Ready
     // Before the layout assigns a width, fall back to the designed 224 px.
@@ -21,33 +27,28 @@ Rectangle {
     implicitWidth: 224
     implicitHeight: Math.round((canResize ? width : implicitWidth) * 9 / 16)
 
-    radius: Theme.radiusMd
-    // Cached thumbnails carry transparent, pre-rounded corners, so the card
-    // surface must show through them instead of the inset colour.
-    color: root.hasImage ? "transparent" : Theme.inset
+    // `.thumb{border-radius:8px}`; a list slot tightens it to 5px at the call
+    // site, exactly as `.lib .thumb` does.
+    radius: Theme.radiusSm
     clip: true
+    // ``.thumb{background:linear-gradient(135deg,var(--s3),var(--inset))}``: the
+    // recessed end of the ramp, so an empty preview reads as a hole in the card.
+    // A thumbnail that lands paints straight over it.
+    //
+    // ``Rectangle.gradient`` only runs Horizontal or Vertical (Qt 6.12 has no
+    // diagonal orientation, and assigning one fails silently), so the ramp goes
+    // along the axis a 16:9 box actually spends its width on: the 135° line's
+    // larger component.
+    gradient: Gradient {
+        orientation: Gradient.Horizontal
+        GradientStop { position: 0.0; color: Theme.surfaceRaised }
+        GradientStop { position: 1.0; color: Theme.inset }
+    }
 
     Accessible.role: Accessible.Graphic
     Accessible.name: root.duration > 0
         ? qsTr("Video thumbnail, %1").arg(Theme.formatClock(root.duration))
         : qsTr("Video thumbnail")
-
-    Rectangle {
-        objectName: "mediaThumb.placeholder"
-        anchors.fill: parent
-        visible: !root.hasImage
-        radius: root.radius
-        color: Theme.surfaceRaised
-
-        Icon {
-            anchors.centerIn: parent
-            name: "film"
-            color: Theme.textMuted
-            width: Math.max(14, Math.min(28, Math.round(root.width * 0.28)))
-            height: width
-            opacity: 0.9
-        }
-    }
 
     Image {
         id: preview
@@ -58,6 +59,17 @@ Rectangle {
         asynchronous: true
         cache: true
         visible: status === Image.Ready
+    }
+
+    Icon {
+        objectName: "mediaThumb.placeholder"
+        anchors.centerIn: parent
+        visible: !root.hasImage
+        name: root.isVideo ? "video" : "file"
+        color: Theme.textMuted
+        width: root.glyphSize
+        height: root.glyphSize
+        strokeWidth: 1.6
     }
 
     // The pill uses the theme's own surface and ink so it stays legible over

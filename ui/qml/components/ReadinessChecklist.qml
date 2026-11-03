@@ -14,36 +14,24 @@ import ".."
 // mapped both `n/a` and `unchecked` to a grey minus, and bolded the row label
 // when the state was `ok` — bolding users read as "blocker" (UI review 2.1,
 // 6.4). Both are gone.
+//
+// A row is laid out like a settings row: the mark beside the name, the state's
+// own word under it, and a hairline between rows. Nothing here hovers or takes
+// a click — it is a readout, not a control.
 ColumnLayout {
     id: root
 
-    spacing: 2
+    spacing: 0
 
     readonly property var rows: appBridge.readinessRows
-
-    // "2 of 3 actionable · 1 n/a" — the denominator counts real checks only,
-    // so it always equals the number of actionable rows on screen.
-    readonly property string scoreText: {
-        var actionable = 0, ready = 0, na = 0
-        for (var i = 0; i < rows.length; i++) {
-            if (rows[i].actionable) {
-                actionable++
-                if (rows[i].state === "ok") ready++
-            } else if (rows[i].state === "na") {
-                na++
-            }
-        }
-        var text = ready + " of " + actionable + " actionable"
-        if (na > 0) text += "  \u00b7  " + na + " n/a"
-        return text
-    }
 
     Repeater {
         model: root.rows
 
-        delegate: Rectangle {
+        delegate: Item {
             id: row
             required property var modelData
+            required property int index
 
             readonly property bool isNa: modelData.state === "na"
             readonly property bool isUnchecked: modelData.state === "unchecked"
@@ -51,28 +39,40 @@ ColumnLayout {
             readonly property bool isBlocking: modelData.state === "todo"
 
             Layout.fillWidth: true
-            implicitHeight: rowLayout.implicitHeight + 16
-            radius: Theme.radiusSm
-            color: rowHover.hovered ? Theme.surfaceAlt : "transparent"
+            implicitHeight: rowLayout.implicitHeight + _pad * 2
+
+            readonly property int _pad: Theme.comfortable ? 18 : 14
+
+            Rectangle {
+                anchors.top: parent.top
+                width: parent.width
+                height: 1
+                // A hairline above the first row would sit against the card
+                // heading, which is what `.set:first-of-type` drops.
+                visible: index > 0
+                color: Theme.border
+            }
 
             RowLayout {
                 id: rowLayout
                 anchors.fill: parent
-                anchors.leftMargin: 9
-                anchors.rightMargin: 9
+                anchors.topMargin: row._pad
+                anchors.bottomMargin: row._pad
                 spacing: 10
 
                 StatusMark {
-                    Layout.alignment: Qt.AlignTop
+                    Layout.alignment: Qt.AlignVCenter
                     status: row.modelData.state
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 1
+                    Layout.minimumWidth: 0
+                    spacing: 2
 
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: modelData.label
                         // No ad-hoc bolding: the StatusMark carries the state.
                         color: row.isNa || row.isUnchecked ? Theme.textMuted
@@ -83,6 +83,22 @@ ColumnLayout {
 
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        // The reference always states the finding ("Found", the
+                        // folder path), not only the remedy, so a green row is
+                        // not just a tick.
+                        visible: modelData.detail !== ""
+                        text: modelData.detail
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSmall
+                        font.family: modelData.id === "output" ? Theme.monoFont
+                                                               : Theme.uiFont
+                        elide: Text.ElideMiddle
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         visible: modelData.hint !== ""
                         text: modelData.hint
                         color: row.isBlocking ? Theme.warning : Theme.textMuted
@@ -106,8 +122,6 @@ ColumnLayout {
                     font.pixelSize: Theme.fontSmall
                 }
             }
-
-            HoverHandler { id: rowHover }
 
             Accessible.role: Accessible.StaticText
             Accessible.name: {

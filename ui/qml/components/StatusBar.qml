@@ -47,7 +47,9 @@ Rectangle {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             text: appBridge.statusMessage
-            color: Theme.textDim
+            // `.stat{color:var(--mu)}` — the whole footer is the muted caption
+            // colour; only the status dot and the two counts depart from it.
+            color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
             elide: Text.ElideRight
         }

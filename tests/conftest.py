@@ -87,6 +87,10 @@ def qml_main(gui_app):
     engine.load(QUrl.fromLocalFile(str(QML_DIR / "Main.qml")))
     if not engine.rootObjects():
         raise RuntimeError("Main.qml failed to load: " + "\n".join(warnings))
+    # A rejected binding still loads, and the ``ui`` fixture clears the list per
+    # module, so a warning produced here would never be read by any test.
+    if warnings:
+        raise RuntimeError("Main.qml loaded with QML warnings: " + "\n".join(warnings))
     yield SimpleNamespace(
         bridge=bridge,
         engine=engine,

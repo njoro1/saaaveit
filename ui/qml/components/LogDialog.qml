@@ -63,12 +63,17 @@ Item {
 
     Rectangle {
         id: panel
-        // ``anchors.margins`` is not part of a Layout's implicit height, so the
-        // padding is named once and added to the panel's own height.
+        // ``.dlg`` is top-aligned in the scrim, not centred: ``.scrim{padding-top:
+        // 90px}`` plus ``#lg{margin-top:60px}`` puts its edge 150px down, so the
+        // log always opens on the same reading line. The clamp keeps it on screen
+        // in a short window, which the prototype never has to be.
+        readonly property int referenceTop: 150
         readonly property int pad: 20
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 60
+        anchors.topMargin: Math.max(Theme.xs,
+                                    Math.min(referenceTop,
+                                             parent.height - height - Theme.xs))
         width: Math.min(640, parent.width - 80)
         height: column.implicitHeight + 2 * panel.pad
         radius: Theme.dialogRadius
@@ -82,15 +87,17 @@ Item {
             anchors.margins: panel.pad
             spacing: 12
 
+            // ``.row{gap:8px}`` — title and count at the two ends of the line.
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 10
+                spacing: 8
 
                 Label {
                     text: "Log"
                     color: Theme.text
                     font.pixelSize: Theme.fontTitle
-                    font.weight: Font.DemiBold
+                    // ``<h2 style="font-size:17px">`` keeps the UA's bold.
+                    font.bold: true
                 }
 
                 Label {
@@ -130,7 +137,9 @@ Item {
                     x: 12
                     width: scroll.width - 24
                     text: appBridge.logText === "" ? "(empty)" : appBridge.logText
-                    color: Theme.textDim
+                    // ``pre.log`` sets no colour: the log is body ink at 12px on
+                    // the recessed surface.
+                    color: Theme.text
                     font.pixelSize: Theme.fontTiny
                     font.family: Theme.monoFont
                     wrapMode: Text.WrapAtWordBoundaryOrAnywhere

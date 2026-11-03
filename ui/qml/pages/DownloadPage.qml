@@ -62,6 +62,7 @@ Item {
             text: "Download"
             color: Theme.text
             font.pixelSize: Theme.fontH1
+            font.letterSpacing: Theme.h1Tracking
             font.bold: true
         }
 
@@ -71,7 +72,7 @@ Item {
             Layout.minimumWidth: 0
             text: "Paste a link, pick the exact stream, save it."
             color: Theme.textMuted
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: Theme.fontBody
             elide: Text.ElideRight
         }
     }
@@ -96,7 +97,25 @@ Item {
             height: page.flowH
             clip: true
             contentWidth: availableWidth
-            ScrollBar.vertical: AppScrollBar { }
+            // ``main{overflow:auto}`` reserves a gutter for the scrollbar; the
+            // handle gets the same 12 px here instead of lying across the cards.
+            rightPadding: ScrollBar.vertical.visible ? ScrollBar.vertical.width : 0
+            // ``AppScrollBar`` replaces the Basic ScrollView's own bars, which
+            // carry their geometry in QML rather than from C++: each bar has to
+            // place itself, and the horizontal slot has to be taken over too or
+            // the style's trough is left behind.
+            ScrollBar.vertical: AppScrollBar {
+                parent: scroller
+                x: scroller.width - width
+                y: scroller.topPadding
+                height: scroller.availableHeight
+            }
+            ScrollBar.horizontal: AppScrollBar {
+                parent: scroller
+                x: scroller.leftPadding
+                y: scroller.height - height
+                width: scroller.availableWidth
+            }
 
             ColumnLayout {
                 width: scroller.availableWidth
@@ -161,23 +180,39 @@ Item {
                     }
 
                     // The skeleton holds the hero's geometry, so inspecting
-                    // never shifts the steps below it.
-                    ColumnLayout {
+                    // never shifts the steps below it. ``.hero`` frames it exactly
+                    // as the finished card does; ``.thumb.sk`` shimmers in place of
+                    // the glyph and the two bars are the title and channel lines.
+                    Rectangle {
+                        id: heroSkeleton
                         objectName: "download.heroSkeleton"
                         Layout.fillWidth: true
                         Layout.topMargin: 14
                         visible: appBridge.infoLoading
-                        spacing: Theme.sm
+                        implicitHeight: skeletonRow.implicitHeight + 24
+                        radius: Theme.radiusLg
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+
+                        // The text column's share of the box: everything the row
+                        // leaves after the frame, the thumb and one gap.
+                        readonly property real textWidth: Math.max(
+                            0, width - 24 - Theme.heroThumbWidth - Theme.lg)
 
                         Accessible.role: Accessible.StaticText
                         Accessible.name: "Inspecting formats and subtitle tracks"
 
                         RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.md
+                            id: skeletonRow
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            // `.hero{gap:16px}`
+                            spacing: Theme.lg
 
-                            MediaThumb {
+                            SkeletonBar {
                                 Layout.preferredWidth: Theme.heroThumbWidth
+                                Layout.preferredHeight: Math.round(Theme.heroThumbWidth * 9 / 16)
                                 Layout.alignment: Qt.AlignTop
                             }
 
@@ -185,15 +220,16 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
                                 Layout.alignment: Qt.AlignTop
-                                spacing: 8
+                                // `.sk{height:18px}` then `margin-top:10px`, `height:14px`
+                                spacing: 10
 
                                 SkeletonBar {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: Theme.heroTitleSize
+                                    Layout.preferredWidth: Math.round(heroSkeleton.textWidth * 0.8)
+                                    Layout.preferredHeight: 18
                                 }
                                 SkeletonBar {
-                                    Layout.preferredWidth: 160
-                                    Layout.preferredHeight: Theme.fontSmall
+                                    Layout.preferredWidth: Math.round(heroSkeleton.textWidth * 0.4)
+                                    Layout.preferredHeight: 14
                                 }
                             }
                         }
@@ -221,7 +257,8 @@ Item {
                             id: heroRow
                             anchors.fill: parent
                             anchors.margins: 12
-                            spacing: Theme.md
+                            // `.hero{gap:16px}`
+                            spacing: Theme.lg
 
                             MediaThumb {
                                 objectName: "download.mediaThumb"
@@ -261,7 +298,8 @@ Item {
 
                                 Flow {
                                     Layout.fillWidth: true
-                                    Layout.topMargin: 8
+                                    // `.chips{margin-top:10px;gap:6px}`
+                                    Layout.topMargin: 10
                                     spacing: 6
 
                                     Chip {
@@ -313,21 +351,19 @@ Item {
                                             : "Inspect a video to see what it offers.")
                     state: page.step2State
 
+                    // While inspecting the reference reserves the matrix with one
+                    // 140px shimmer rather than rows it has not earned yet.
                     ColumnLayout {
                         Layout.fillWidth: true
                         visible: appBridge.infoLoading
-                        spacing: Theme.sm
+                        spacing: 0
 
                         Accessible.role: Accessible.StaticText
                         Accessible.name: "Inspecting formats and subtitle tracks"
 
-                        Repeater {
-                            model: 3
-
-                            SkeletonBar {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Theme.matrixCellHeight
-                            }
+                        SkeletonBar {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 140
                         }
                     }
 
@@ -394,7 +430,6 @@ Item {
                         AppButton {
                             text: "Change…"
                             small: true
-                            variant: "ghost"
                             enabled: !page.busy
                             onClicked: folderPicker.open()
                         }

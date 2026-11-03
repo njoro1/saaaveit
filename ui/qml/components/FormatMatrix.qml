@@ -178,8 +178,10 @@ ColumnLayout {
 
                     background: Rectangle {
                         radius: Theme.radiusMd
+                        // `.cell` is `s1`, its hover `s2`, its pressed state the
+                        // accent tint with a 2px accent line and bold words.
                         color: cell.selected ? Theme.accentSoft
-                               : (cell.hovered ? Theme.surfaceRaised : Theme.surface)
+                               : (cell.hovered ? Theme.surfaceAlt : Theme.surface)
                         border.width: cell.selected ? 2 : 1
                         border.color: cell.selected ? Theme.accentLine
                                       : (cell.hovered ? Theme.borderStrong : Theme.border)
@@ -207,6 +209,10 @@ ColumnLayout {
                                    : ""
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontTiny
+                            // `.cell[aria-pressed=true]{font-weight:700}` lifts the
+                            // whole cell, its `small` included.
+                            font.weight: slot.offered && slot.modelData.entry.selected
+                                         ? Font.Bold : Font.Normal
                         }
                     }
 

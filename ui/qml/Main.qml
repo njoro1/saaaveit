@@ -5,7 +5,7 @@ import "."
 import "components"
 import "pages"
 
-// Application shell: 56px command bar, 64px icon rail, the page stack, and a
+// Application shell: 48px command bar, 64px icon rail, the page stack, and a
 // 30px status bar. Pages are instantiated once and kept alive, so switching
 // screens never loses state.
 ApplicationWindow {
@@ -61,6 +61,18 @@ ApplicationWindow {
         logDialog.open()
     }
 
+    // Jump to the Library and ask the question there. A command that destroys
+    // nothing on its own is what the reference's palette does; the dialog is the
+    // only way history is cleared.
+    function askClearHistory() {
+        window.goTo(1)
+        Qt.callLater(function () {
+            var page = stack.children.length > 1 ? stack.children[1] : null
+            if (page !== null && page.openClearDialog !== undefined)
+                page.openClearDialog()
+        })
+    }
+
     function runAction(action) {
         if (action === "inspect")
             appBridge.inspect()
@@ -76,6 +88,8 @@ ApplicationWindow {
             appBridge.openLastFile()
         else if (action === "view_log")
             window.openLog()
+        else if (action === "open_log_file")
+            appBridge.openDebugLog()
         else if (action === "toggle_theme")
             appBridge.toggleTheme()
         else if (action === "toggle_comfortable")
@@ -83,7 +97,10 @@ ApplicationWindow {
         else if (action === "toggle_reduced_motion")
             appBridge.setReducedMotion(!appBridge.reducedMotion)
         else if (action === "clear_history")
-            appBridge.clearHistory()
+            // The palette does not clear anything on its own: it takes the user
+            // to the Library, where the same confirm dialog the header button
+            // opens is waiting.
+            window.askClearHistory()
     }
 
     // ``shortcutMap`` is a notified property; ``shortcutFor()`` is a slot, so
@@ -140,25 +157,29 @@ ApplicationWindow {
         onActivated: window.runAction("open_last")
     }
 
-    ColumnLayout {
+    // ``.app{grid-template-columns:64px 1fr;grid-template-rows:48px 1fr 30px}``
+    // with ``.rail{grid-row:1/4}``: the rail runs the full height and the bar
+    // and the status line occupy only the content column, so neither hairline
+    // crosses the rail.
+    RowLayout {
         anchors.fill: parent
         spacing: 0
 
-        CommandBar {
-            Layout.fillWidth: true
-            headline: appBridge.hasInfo ? appBridge.videoTitle : ""
+        IconRail {
+            Layout.fillHeight: true
+            currentIndex: window.currentPage
+            onNavigate: function (index) { window.goTo(index) }
             onOpenPalette: palette.open()
         }
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
 
-            IconRail {
-                Layout.fillHeight: true
-                currentIndex: window.currentPage
-                onNavigate: function (index) { window.goTo(index) }
+            CommandBar {
+                Layout.fillWidth: true
+                headline: appBridge.hasInfo ? appBridge.videoTitle : ""
                 onOpenPalette: palette.open()
             }
 
@@ -170,6 +191,7 @@ ApplicationWindow {
                 Layout.fillHeight: true
 
                 StackLayout {
+                    id: stack
                     anchors.fill: parent
                     currentIndex: window.currentPage
 
@@ -178,11 +200,11 @@ ApplicationWindow {
                     SettingsPage {}
                 }
             }
-        }
 
-        StatusBar {
-            Layout.fillWidth: true
-            onLogRequested: window.openLog()
+            StatusBar {
+                Layout.fillWidth: true
+                onLogRequested: window.openLog()
+            }
         }
     }
 

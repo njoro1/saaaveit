@@ -30,26 +30,32 @@ Rectangle {
         x: Theme.md
         y: Theme.md
         width: Math.max(0, root.width - 2 * Theme.md)
-        spacing: 6
+        // `.ban b{margin-bottom:2px}`; the detail and the remedy are one block of
+        // text broken by `<br>`, so they do not get a gap of their own.
+        spacing: 2
 
         Label {
             objectName: "download.failureTitle"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            // `.ban b` is bold text in the reading colour, not a red headline:
+            // the border and the tint already say "error", so the words can
+            // stay neutral and legible.
             text: appBridge.failureTitle
-            color: Theme.error
-            font.pixelSize: Theme.fontBody
-            font.weight: Font.DemiBold
+            color: Theme.text
+            font.pixelSize: Theme.fontSmall
+            font.weight: Font.Bold
             wrapMode: Text.WordWrap
         }
 
         Label {
             objectName: "download.failureDetail"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             visible: appBridge.failureDetail !== ""
             text: appBridge.failureDetail
             color: Theme.text
             font.pixelSize: Theme.fontSmall
-            font.family: Theme.monoFont
             wrapMode: Text.WordWrap
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -58,21 +64,22 @@ Rectangle {
         Label {
             objectName: "download.failureRemedy"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             visible: appBridge.failureRemediation !== ""
             text: appBridge.failureRemediation
-            color: Theme.textDim
+            color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
             wrapMode: Text.WordWrap
         }
 
         RowLayout {
-            Layout.topMargin: 2
+            // `.ban .row{margin-top:10px}` less the column's own 2px.
+            Layout.topMargin: 8
             spacing: Theme.sm
 
             AppButton {
                 objectName: "download.failureRetry"
                 text: "Retry"
-                variant: "primary"
                 small: true
                 enabled: !appBridge.downloadRunning && appBridge.canDownload
                 onClicked: appBridge.download()
@@ -90,8 +97,6 @@ Rectangle {
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
             AppButton {
                 objectName: "download.failureDismiss"
                 text: "Dismiss"
@@ -99,6 +104,8 @@ Rectangle {
                 small: true
                 onClicked: appBridge.dismissFailure()
             }
+
+            Item { Layout.fillWidth: true }
         }
     }
 }

@@ -19,17 +19,16 @@ Rectangle {
 
     signal clicked()
 
-    // A toned chip's background *is* the tone at 10-14%, so its label cannot
-    // also be the plain tone: accent lands at 3.57:1 there. The other tones
-    // were set against their own tint and clear AA; `acc` is the one that needs
-    // the derived colour.
+    // `.chip` is `--mu`, `.chip.a` is `--tx` over the accent tint: the accent
+    // belongs to the tint and the border, never to the word itself. The other
+    // tones were set against their own tint and clear AA.
     readonly property color _fg: tone === "" ? Theme.textMuted
-                             : (tone === "acc" ? Theme.accentOnTint
+                             : (tone === "acc" ? Theme.text
                                                : Theme.toneColor(tone))
 
     // Reference `.chip` is `padding: 1px 10px`.
     implicitWidth: row.implicitWidth + 20
-    implicitHeight: 22
+    implicitHeight: 20
     // The reference's plain chip has nothing behind it and a `b2` hairline;
     // `.chip.a` - the pressed one - adds the accent tint and a `line` border.
     radius: Theme.radiusCircle

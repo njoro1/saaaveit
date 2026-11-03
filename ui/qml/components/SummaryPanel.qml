@@ -97,7 +97,11 @@ Rectangle {
         // Outside a Layout a Rectangle keeps its own default height; this card
         // is sized by its content.
         height: implicitHeight
-        padding: Theme.lg
+        // `.panel{box-shadow:0 1px 2px rgba(0,0,0,.25)}` — the only card in the
+        // app that lifts off the page, because it floats over the scrolling flow.
+        elevation: Theme.elevationCard
+        paddingV: Theme.lg
+        paddingH: Theme.lg
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -189,7 +193,8 @@ Rectangle {
                     objectName: "download.stageLabel"
                     text: root.stageText()
                     color: Theme.text
-                    font.pixelSize: Theme.fontSmall
+                    // `.row` spans are body text; only `.num` steps down.
+                    font.pixelSize: Theme.fontBody
                 }
 
                 Item { Layout.fillWidth: true }
@@ -200,7 +205,7 @@ Rectangle {
                           : (root.shownProgress > 0 || root.finished
                              ? root.shownProgress + "%" : "")
                     color: Theme.text
-                    font.pixelSize: Theme.fontSmall
+                    font.pixelSize: Theme.fontTiny
                     font.family: Theme.monoFont
                 }
             }
@@ -260,6 +265,17 @@ Rectangle {
                 color: Theme.warning
                 font.pixelSize: Theme.fontSmall
                 wrapMode: Text.WordWrap
+            }
+
+            // ``.ban`` sits between the legs and the buttons: the explanation
+            // outlives the failed run on purpose, so a user who tabs back later
+            // still finds the reason - and the doors - right where the failure
+            // happened rather than under the actions.
+            FailureBanner {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                Layout.topMargin: 12
+                visible: appBridge.failureActive
             }
 
             // ------------------------------------------------------ the action
@@ -325,14 +341,6 @@ Rectangle {
                     Layout.minimumWidth: 0
                     Layout.maximumWidth: 420
                 }
-            }
-
-            // ``.ban``: the explanation outlives the failed run on purpose, so
-            // a user who tabs back later still finds the reason - and the doors.
-            FailureBanner {
-                Layout.fillWidth: true
-                Layout.preferredHeight: implicitHeight
-                visible: appBridge.failureActive
             }
         }
     }

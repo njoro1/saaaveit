@@ -11,7 +11,9 @@ Button {
     property string variant: "default"
     property bool small: false
     property string iconName: ""
-    property int iconSize: small ? 14 : 15
+    // `.btn svg{width:16px;height:16px}` — one size for every button, small
+    // included, so an icon keeps its weight when the label shrinks.
+    property int iconSize: 16
     // Hover text; primarily for icon-only buttons whose label is empty.
     property string tooltip: ""
     // A status-coloured label — the status bar's "2 errors". Only the four
@@ -26,6 +28,9 @@ Button {
     // button that a Layout *stretches* still keeps its label in the middle
     // instead of hugging the left edge.
     property bool centered: false
+    // A mono kicker after the label — the top bar's ``Search  Ctrl K``. It is
+    // part of the button, not a sibling, so it scales and dims with it.
+    property string trailingText: ""
 
     readonly property bool _primary: variant === "primary"
     readonly property bool _danger: variant === "danger"
@@ -39,7 +44,8 @@ Button {
         if (_primary) return Theme.accentInk
         if (_danger) return Theme.error
         if (_link) return Theme.accent
-        if (_ghost) return hovered ? Theme.text : Theme.textDim
+        // `.btn g{color:var(--mu)}` and `.btn g:hover{color:var(--tx)}`.
+        if (_ghost) return hovered ? Theme.text : Theme.textMuted
         return Theme.text
     }
 
@@ -108,6 +114,15 @@ Button {
             // pressed ones at 700, and the status bar's counts at 600.
             font.weight: root.selected ? Font.Bold
                      : (root._primary || root.tone !== "" ? Font.DemiBold : Font.Medium)
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        Label {
+            visible: root.trailingText !== ""
+            text: root.trailingText
+            color: root.labelColor
+            font.pixelSize: Theme.fontTiny
+            font.family: Theme.monoFont
             verticalAlignment: Text.AlignVCenter
         }
 

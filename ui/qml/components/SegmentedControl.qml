@@ -30,8 +30,12 @@ Item {
         return root.disabledIds.indexOf(id) !== -1
     }
 
+    // `.seg button{padding:5px 14px}` inside `.seg{padding:3px}`: one line box,
+    // 10px of button padding and 6px of track. It grows with the type scale the
+    // same way the reference's does.
+    readonly property int _lineHeight: Math.round(Theme.fontBody * 1.45)
     implicitWidth: track.implicitWidth + 6
-    implicitHeight: Theme.controlHeight
+    implicitHeight: _lineHeight + 16
     activeFocusOnTab: true
 
     function _step(delta) {
@@ -60,10 +64,20 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.radiusSm
+        radius: Theme.radiusMd
+        // `.seg` is an inset track with no border of its own; only the keyboard
+        // ring says where the control is.
         color: Theme.inset
-        border.color: root.activeFocus ? Theme.accentLine : Theme.border
-        border.width: root.activeFocus ? 2 : 1
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: -3
+        radius: Theme.radiusMd + 3
+        color: "transparent"
+        border.width: 2
+        border.color: Theme.accentLine
+        visible: root.activeFocus
     }
 
     RowLayout {
@@ -83,8 +97,9 @@ Item {
                 readonly property bool isOff: root.isDisabled(modelData.id)
 
                 Layout.fillHeight: true
-                implicitWidth: segLabel.implicitWidth + 24
-                radius: Theme.radiusXs
+                // `.seg button{padding:5px 14px;border-radius:8px}`
+                implicitWidth: segLabel.implicitWidth + 28
+                radius: Theme.radiusSm
                 opacity: seg.isOff ? 0.45 : 1.0
                 // The reference's pressed segment is *not* the accent: a raised
                 // surface and a heavier word. The accent stays reserved for
@@ -92,16 +107,18 @@ Item {
                 color: seg.isOn ? Theme.surfaceRaised
                                 : (segHover.hovered && !seg.isOff
                                    ? Theme.surfaceAlt : "transparent")
-                border.width: seg.isOn ? 1 : 0
-                border.color: Theme.borderStrong
+                // The reference's pressed segment is the fill alone: no outline,
+                // no accent. Adding a border here made two things claim "on".
 
                 Label {
                     id: segLabel
                     anchors.centerIn: parent
                     text: seg.modelData.label
-                    color: seg.isOn ? Theme.text
-                         : seg.isOff ? Theme.textMuted : Theme.textDim
-                    font.pixelSize: Theme.fontSmall
+                    // `.seg button` is `--mu` and only the pressed one steps up to
+                    // `--tx`; a disabled segment is the same word at the row's
+                    // reduced opacity.
+                    color: seg.isOn ? Theme.text : Theme.textMuted
+                    font.pixelSize: Theme.fontBody
                     font.weight: seg.isOn ? Font.DemiBold : Font.Normal
                 }
 

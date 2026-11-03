@@ -15,10 +15,17 @@ Rectangle {
     implicitWidth: Theme.railWidth
     color: Theme.surface
 
+    // The rail's tooltips name the chord that goes there, live from the map the
+    // Settings page records into - `title="Download · Ctrl 1"` in the reference.
+    function chord(action) {
+        var map = appBridge.shortcutMap
+        return map && map[action] ? map[action] : ""
+    }
+
     readonly property var items: [
-        { label: "Download", icon: "download" },
-        { label: "Library", icon: "history" },
-        { label: "Settings", icon: "settings" }
+        { label: "Download", icon: "download", action: "goto_download" },
+        { label: "Library", icon: "history", action: "goto_library" },
+        { label: "Settings", icon: "settings", action: "goto_settings" }
     ]
 
     Rectangle {
@@ -84,13 +91,15 @@ Rectangle {
                 }
 
                 AppToolTip {
-                    text: modelData.label
+                    text: stop.modelData.label
+                          + (root.chord(stop.modelData.action) !== ""
+                             ? " · " + root.chord(stop.modelData.action) : "")
                     hovered: railMouse.containsMouse
                     showDelay: 400
                 }
 
                 Accessible.role: Accessible.PageTab
-                Accessible.name: modelData.label
+                Accessible.name: stop.modelData.label
                 Accessible.selected: isOn
             }
         }
@@ -133,7 +142,8 @@ Rectangle {
             }
 
             AppToolTip {
-                text: "Command palette · Ctrl K"
+                text: "Command palette" + (root.chord("palette") !== ""
+                       ? " · " + root.chord("palette") : "")
                 hovered: paletteMouse.containsMouse
                 showDelay: 400
             }

@@ -84,7 +84,9 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: "None — video only"
-                color: root.selected === "" ? Theme.text : Theme.textDim
+                // `.radio` never dims its own label: the tint, the ring and the
+                // weight say which track is chosen.
+                color: Theme.text
                 font.pixelSize: Theme.fontBody
                 font.weight: root.selected === "" ? Font.DemiBold : Font.Normal
             }
@@ -141,7 +143,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: engItem.track ? engItem.track.label : "English"
-                color: engItem.checked ? Theme.text : Theme.textDim
+                color: Theme.text
                 font.pixelSize: Theme.fontBody
                 font.weight: engItem.checked ? Font.DemiBold : Font.Normal
             }

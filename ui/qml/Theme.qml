@@ -79,6 +79,9 @@ QtObject {
     readonly property int fontTitle: 17 + fontBoost
     readonly property int fontH2: 21 + fontBoost
     readonly property int fontH1: 26 + fontBoost
+    // ``h1{letter-spacing:-.01em}`` — the only tracked text in the reference.
+    // Expressed as a fraction of the size so it survives the density step.
+    readonly property real h1Tracking: -0.01 * fontH1
 
     // --- Surfaces ---------------------------------------------------------
     // The reference's four-step ramp: page (`background`), card (`surface`),
@@ -254,6 +257,9 @@ QtObject {
     // Legacy alias: ``fieldHeight`` was the old control height.
     readonly property int fieldHeight: controlHeight
     readonly property int topbarHeight: 48
+    // ``.top{padding:0 20px}`` — wider than the status bar's 16px, and not a
+    // density value: the reference never changes it.
+    readonly property int topbarPaddingH: 20
     readonly property int railWidth: 64
     readonly property int railItemSize: 42
     readonly property int statusbarHeight: 30
@@ -265,6 +271,10 @@ QtObject {
     // keep the reference's 38.
     readonly property int inputHeight: comfortable ? 48 : 44
     readonly property int selectHeight: comfortable ? 42 : 38
+    // A field inside a settings row is one step shorter than the page's URL
+    // field (`#tpl`/`#rst` carry `height:36px`), so the row stays 14px of air
+    // rather than growing around a 44px control.
+    readonly property int rowInputHeight: comfortable ? 38 : 36
     readonly property int primaryActionHeight: comfortable ? 44 : 40
     // ``.btn`` sits one step tighter than an input's 10px corner.
     readonly property int buttonRadius: 9
@@ -276,9 +286,11 @@ QtObject {
     // Sticky sibling panels: download summary, library drawer.
     readonly property int panelWidth: 340
     readonly property int drawerWidth: 320
-    // ``.dl`` / ``.lib`` + ``.drw`` put 28px between the main column and its
-    // sticky sibling.
+    // ``.dl{gap:28px}`` — the flow column and its sticky summary.
     readonly property int columnGap: 28
+    // ``.libwrap{gap:18px}`` — the list and its drawer sit a step tighter than
+    // the download flow, so the drawer reads as part of the list.
+    readonly property int drawerGap: 18
     // ``.lib`` grid columns: 64 thumb / flex name / 80 size / 130 when /
     // 150 actions. When a row is selected the page collapses the last two.
     readonly property int listThumbWidth: 64

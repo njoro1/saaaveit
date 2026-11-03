@@ -36,7 +36,8 @@ Rectangle {
         Label {
             text: root.key
             color: Theme.textMuted
-            font.pixelSize: Theme.fontSmall
+            // `.kv span` is body text; only `:first-child` changes colour.
+            font.pixelSize: Theme.fontBody
         }
 
         Label {
@@ -45,7 +46,9 @@ Rectangle {
             Layout.minimumWidth: 0
             text: root.value
             color: Theme.text
-            font.pixelSize: Theme.fontSmall
+            // `.mono`/`.num` on the value span restyles it to 12.5px; an
+            // unstyled value keeps the row's own 14px.
+            font.pixelSize: root.mono ? Theme.fontTiny : Theme.fontBody
             font.family: root.mono ? Theme.monoFont : Theme.uiFont
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideRight

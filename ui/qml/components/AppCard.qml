@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 
-// Card with an optional header band (uppercase title + right-hand chips) and a
+// Card with an optional header (15px/600 title + right-hand chips) and a
 // default content slot.
 //
 //   AppCard {
@@ -19,8 +19,21 @@ Rectangle {
 
     property string title: ""
     property string note: ""
-    property bool tight: false
-    property int padding: tight ? Theme.md : 15
+    // The reference's `.card` insets its content 6px vertically and 18px
+    // horizontally: the rows themselves supply the air between them, so the
+    // card only supplies the frame. A card of loose widgets (the summary panel)
+    // overrides both.
+    property int paddingV: 6
+    property int paddingH: 18
+    // The reference card stacks its rows with no extra gap - each row brings
+    // its own 14px of air and a hairline - while a card of loose widgets
+    // (the summary panel aside) keeps the 10px rhythm.
+    property int bodySpacing: 10
+
+    // `.card` carries no shadow at all — its fill and a `b1` hairline separate
+    // it from the page. Only `.panel` (the sticky summary) casts one, so a card
+    // asks for elevation rather than assuming it.
+    property int elevation: Theme.elevationNone
 
     // The root only reserves the layout cell; the surface and its shadow are
     // siblings so the shadow can sit behind the surface. Level-1 only (T2.1):
@@ -29,9 +42,10 @@ Rectangle {
     color: "transparent"
     implicitHeight: outer.implicitHeight
 
-    readonly property var _shadow: Theme.shadowFor(Theme.elevationCard)
+    readonly property var _shadow: Theme.shadowFor(root.elevation)
 
     Rectangle {
+        visible: root.elevation > Theme.elevationNone
         anchors.fill: surface
         anchors.margins: -2
         radius: Theme.cardRadius + 2
@@ -40,6 +54,7 @@ Rectangle {
     }
 
     Rectangle {
+        visible: root.elevation > Theme.elevationNone
         anchors.fill: surface
         anchors.margins: -1
         radius: Theme.cardRadius + 1
@@ -52,8 +67,8 @@ Rectangle {
         anchors.fill: parent
         radius: Theme.cardRadius
         color: Theme.surface
-        // The reference pairs its cards' shadow with a `b1` hairline; the ring
-        // alone left cards floating on a same-hue page.
+        // `.card{border:1px solid var(--b1)}` is the whole separation: the page
+        // is one step darker than the card.
         border.width: 1
         border.color: Theme.border
     }
@@ -68,19 +83,24 @@ Rectangle {
             id: header
             visible: root.title !== ""
             Layout.fillWidth: true
-            Layout.preferredHeight: headerRow.implicitHeight + 26
+            // ``.card{padding:6px 18px}`` is spent *before* the heading, so the
+            // title sits 6+14=20px below the top border.
+            Layout.topMargin: root.paddingV
+            Layout.preferredHeight: headerRow.implicitHeight + 18
 
             RowLayout {
                 id: headerRow
                 anchors.fill: parent
-                anchors.leftMargin: 15
-                anchors.rightMargin: 15
+                anchors.leftMargin: root.paddingH
+                anchors.rightMargin: root.paddingH
+                anchors.topMargin: 14
+                anchors.bottomMargin: 4
                 spacing: 9
 
                 Label {
                     text: root.title
                     color: Theme.text
-                    font.pixelSize: Theme.fontSmall + 1
+                    font.pixelSize: Theme.fontLabel
                     font.weight: Font.DemiBold
                 }
 
@@ -110,13 +130,6 @@ Rectangle {
                     spacing: 6
                 }
             }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: 1
-                color: Theme.borderSoft
-            }
         }
 
         // --- Body -----------------------------------------------------------
@@ -124,8 +137,14 @@ Rectangle {
             id: body
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.margins: root.padding
-            spacing: 10
+            Layout.leftMargin: root.paddingH
+            Layout.rightMargin: root.paddingH
+            // A titled card has already spent the frame's vertical padding above
+            // the heading: ``.card>h2{padding:14px 0 4px}`` is the only air before
+            // the first row, which brings its own 14px.
+            Layout.topMargin: root.title === "" ? root.paddingV : 0
+            Layout.bottomMargin: root.paddingV
+            spacing: root.bodySpacing
         }
     }
 

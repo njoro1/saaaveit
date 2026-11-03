@@ -33,9 +33,12 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         width: root.width > 0 ? root.width : implicitWidth
-        spacing: Theme.sm
+        // `.empty b{margin-bottom:4px}`
+        spacing: Theme.xs
 
         Rectangle {
+            // `.empty` is text only: a caller that names no icon gets no badge.
+            visible: root.iconName !== ""
             Layout.alignment: Qt.AlignHCenter
             implicitWidth: 44
             implicitHeight: 44
@@ -55,7 +58,7 @@ Item {
 
         Label {
             Layout.fillWidth: true
-            Layout.topMargin: Theme.xs
+            Layout.topMargin: root.iconName !== "" ? Theme.md : 0
             text: root.title
             color: Theme.text
             font.pixelSize: Theme.fontTitle

@@ -20,14 +20,16 @@ Rectangle {
         anchors.bottom: parent.bottom
         width: parent.width
         height: 1
-        color: Theme.borderSoft
+        // `.top{border-bottom:1px solid var(--b1)}` — the same hairline the
+        // cards use, not the lighter header rule.
+        color: Theme.border
     }
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: Theme.lg
-        anchors.rightMargin: Theme.lg
-        spacing: Theme.md
+        anchors.leftMargin: 20
+        anchors.rightMargin: 20
+        spacing: Theme.sm
 
         // The native title bar already carries the app name and icon, and each
         // page has its own H1; repeating either here would double the chrome
@@ -37,15 +39,17 @@ Rectangle {
             objectName: "chrome.headline"
             visible: root.headline !== ""
             text: root.headline
-            color: Theme.textDim
-            font.pixelSize: Theme.fontSmall
-            elide: Text.ElideMiddle
+            // `.ctx` is the muted caption colour at body size, and `flex:1` —
+            // it takes every pixel the buttons leave and ellipsises on the
+            // right, so no cap on its width here.
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontBody
+            elide: Text.ElideRight
             // Same class as the blocked reason: a non-filling Layout item is
             // sized to its preferred width and then simply overflows the bar,
             // so a long video title walks over the buttons on its right.
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            Layout.maximumWidth: 520
         }
 
         Item { Layout.fillWidth: true }
@@ -53,18 +57,18 @@ Rectangle {
         AppButton {
             objectName: "chrome.paletteButton"
             text: "Search"
-            small: true
             variant: "ghost"
             iconName: "search"
+            // `.top #sb` carries its chord as part of the button, so the
+            // shortcut is discoverable without opening the palette.
+            trailingText: appBridge.shortcutMap.palette
             onClicked: root.openPalette()
         }
 
         AppButton {
             objectName: "chrome.themeButton"
             text: appBridge.themeName === "dark" ? "Light" : "Dark"
-            small: true
             variant: "ghost"
-            iconName: appBridge.themeName === "dark" ? "sun" : "moon"
             onClicked: appBridge.toggleTheme()
         }
     }

@@ -1193,17 +1193,26 @@ class TestLibraryDrawer:
                     _find_item(ui.root, control)
 
                 page = _find_item(ui.root, "libraryPage")
-                when = [item for item in _visual_tree(page)
-                        if str(item.property("text") or "") == "WHEN"]
-                assert when, "the WHEN column header disappeared entirely"
-                assert not bool(when[0].property("visible"))
+
+                # `.libwrap.has .lib>:nth-child(n+4){display:none}` - the row
+                # gives up its WHEN value and its inline actions to the drawer,
+                # and the reference lists carry no column headers at all. The
+                # delegate is rebuilt when the selection changes, so the row is
+                # looked up again instead of being held on to.
+                def when_shown() -> bool:
+                    found = [item for item in _visual_tree(page)
+                             if item.objectName() == "library.when.0"]
+                    assert found, "the row's WHEN value disappeared entirely"
+                    return bool(found[0].property("visible"))
+
+                assert when_shown() is False
 
                 bridge.selectHistory(-1)
                 app.processEvents()
                 QTest.qWait(60)
                 app.processEvents()
                 assert not bool(drawer.property("visible"))
-                assert bool(when[0].property("visible"))
+                assert when_shown() is True
             finally:
                 _leave_library(ui, app)
 
