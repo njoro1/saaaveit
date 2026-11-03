@@ -55,6 +55,7 @@ REM ffmpeg is bundled under its real name; src/media_source.py renames it to a
 REM literal ffmpeg.exe at runtime, because --ffmpeg-location only finds a file
 REM called ffmpeg(.exe) and without it the video+audio merge never runs.
 python -m PyInstaller --noconfirm --onedir --windowed --name Saaaveit ^
+    --icon "ui\branding\saaaveit-favicon.ico" ^
     --hidden-import PySide6.QtCore ^
     --hidden-import PySide6.QtGui ^
     --hidden-import PySide6.QtQml ^
@@ -66,6 +67,7 @@ python -m PyInstaller --noconfirm --onedir --windowed --name Saaaveit ^
     --add-binary "%FFMPEG_EXE%;." ^
     --add-data "ui/qml;ui/qml" ^
     --add-data "ui/qml/components;ui/qml/components" ^
+    --add-data "ui/branding;ui/branding" ^
     --add-data "%PYSIDE6_DIR%\qml\Qt;PySide6/qml/Qt" ^
     --add-data "%PYSIDE6_DIR%\qml\QtQml;PySide6/qml/QtQml" ^
     --add-data "%PYSIDE6_DIR%\qml\QtQuick;PySide6/qml/QtQuick" ^

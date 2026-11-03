@@ -157,7 +157,10 @@ Item {
                     RowLayout {
                         spacing: 8
                         Repeater {
-                            model: appBridge.accentChoices
+                            // Theme, not appBridge: the swatch has to be painted
+                            // from the same table that colours the app, or the
+                            // dot promises a hue the UI then refuses to deliver.
+                            model: Theme.accentChoices
                             delegate: Rectangle {
                                 required property var modelData
 
@@ -350,6 +353,33 @@ Item {
                 title: "Environment"
                 bodySpacing: 0
 
+                // The app's own nameplate. The card is the only screen that
+                // states what Saaaveit is and which build is running, so the
+                // lockup — tile, then the outlined wordmark — belongs here
+                // rather than in the chrome, which the command bar already
+                // refuses to duplicate (T6.5).
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 6
+                    Layout.bottomMargin: 2
+                    spacing: Theme.md
+
+                    Brand {
+                        variant: "lockup"
+                        size: 26
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Label {
+                        objectName: "settings.appVersion"
+                        text: "v" + appBridge.appVersion
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSmall
+                        font.family: Theme.monoFont
+                    }
+                }
+
                 Repeater {
                     // The reference names exactly these three; the other
                     // bridge rows (app folder, yt-dlp) live in the picker and
@@ -364,7 +394,10 @@ Item {
                         required property var modelData
                         required property int index
                         objectName: "settings.environment." + modelData.id
-                        topBorder: index > 0
+                        // Every row rules now: the nameplate sits above the
+                        // first one, so it needs the same separator the
+                        // reference gives a stacked row.
+                        topBorder: true
                         label: modelData.label
                         value: modelData.value
                         valueMono: true

@@ -39,6 +39,9 @@ from .thumbnail import cached_thumbnail
 
 APP_NAME = "Saaaveit"
 APP_VERSION = "1.0.0"
+# The brand hue, and the value Theme.qml falls back to. Kept in sync with the
+# first entry of ``Theme.accentChoices`` by tests/test_theme_contrast.py.
+DEFAULT_ACCENT = "cobalt"
 
 STATUS_READY = "ready"
 STATUS_RUNNING = "running"
@@ -185,7 +188,7 @@ class DownloaderBridge(QObject):
         ("_default_subtitle_track", "downloads/subtitleTrack", "original"),
         ("_filename_template", "downloads/filenameTemplate", DEFAULT_FILENAME_TEMPLATE),
         ("_theme_name", "ui/theme", "dark"),
-        ("_accent_name", "ui/accent", "iris"),
+        ("_accent_name", "ui/accent", DEFAULT_ACCENT),
         ("_comfortable", "ui/comfortable", False),
         ("_reduced_motion", "ui/reducedMotion", False),
         ("_shortcuts_json", "ui/shortcuts", "{}"),
@@ -243,7 +246,7 @@ class DownloaderBridge(QObject):
         self._default_subtitle_track = "original"
         self._filename_template = DEFAULT_FILENAME_TEMPLATE
         self._theme_name = "dark"
-        self._accent_name = "iris"
+        self._accent_name = DEFAULT_ACCENT
         self._comfortable = False
         self._reduced_motion = False
         self._shortcuts_json = "{}"
@@ -1407,12 +1410,16 @@ class DownloaderBridge(QObject):
 
     @Property(list, notify=themeChanged)
     def accentChoices(self) -> list:
+        # Ids and names only. The hexes live in ``Theme.accentChoices``, which
+        # is what actually paints — this list used to carry a second, drifted
+        # copy, so the swatch you clicked was not the colour you got.
         return [
-            {"id": "iris", "label": "Iris", "dark": "#8A6BFF", "light": "#5B3DF5"},
-            {"id": "azure", "label": "Azure", "dark": "#4EA8FF", "light": "#1D69C5"},
-            {"id": "mint", "label": "Mint", "dark": "#3DD68C", "light": "#0E7948"},
-            {"id": "amber", "label": "Amber", "dark": "#F5A623", "light": "#985B00"},
-            {"id": "rose", "label": "Rose", "dark": "#FF5F6D", "light": "#C72E3C"},
+            {"id": "cobalt", "label": "Cobalt"},
+            {"id": "iris", "label": "Iris"},
+            {"id": "azure", "label": "Azure"},
+            {"id": "mint", "label": "Mint"},
+            {"id": "amber", "label": "Amber"},
+            {"id": "rose", "label": "Rose"},
         ]
 
     @Property(str, notify=themeChanged)
@@ -1422,9 +1429,9 @@ class DownloaderBridge(QObject):
     @accentName.setter
     def accentName(self, value: str) -> None:
         known = {choice["id"] for choice in self.accentChoices}
-        value = str(value or "iris")
+        value = str(value or DEFAULT_ACCENT)
         if value not in known:
-            value = "iris"
+            value = DEFAULT_ACCENT
         if value != self._accent_name:
             self._accent_name = value
             self.themeChanged.emit()

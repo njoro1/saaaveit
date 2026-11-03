@@ -339,6 +339,7 @@ Item {
                     visible: appBridge.historyCount === 0
                     // `.empty` is two lines of centred text and nothing else.
                     iconName: ""
+                    brand: true
                     title: "Nothing downloaded yet"
                     body: "Downloads show up here, with the format and subtitle track that were used."
                 }

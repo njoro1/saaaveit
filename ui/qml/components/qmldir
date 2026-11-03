@@ -4,6 +4,7 @@ AppScrollBar 1.0 AppScrollBar.qml
 AppToolTip 1.0 AppToolTip.qml
 AppSwitch 1.0 AppSwitch.qml
 BoundComboBox 1.0 BoundComboBox.qml
+Brand 1.0 Brand.qml
 Chip 1.0 Chip.qml
 CommandBar 1.0 CommandBar.qml
 CommandPalette 1.0 CommandPalette.qml

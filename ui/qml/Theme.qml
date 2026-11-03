@@ -29,24 +29,34 @@ QtObject {
     // The Settings page shows these as swatches. ``accentName`` is persisted by
     // the bridge; everything else derives from it.
     // Every swatch clears WCAG AA (4.5:1) against `accentInk`, in its own theme
-    // — that is what makes one ink token legal for all five. `tests/
+    // — that is what makes one ink token legal for all six. `tests/
     // test_theme_contrast.py` re-derives the ratios from this table, so a
     // "prettier" hex that dips below the bar fails the build.
+    //
+    // `cobalt` is the brand hue: its light value is the logo tile's own
+    // `#2F6FEB` from `ui/branding`, unchanged. White ink on it measures 4.57:1,
+    // which clears AA by 0.07 — the tightest margin in the table, and the one
+    // that must not be nudged darker for taste. The dark value is the same hue
+    // lifted to `#5A95F5` (6.44:1 against `#0D0E1A`), because `#2F6FEB` is too
+    // dark for the near-black page and would fail the 3:1 shape floor as a rail
+    // icon. The logo tile itself is exempt: it is brand ink and never follows
+    // this token.
     readonly property var accentChoices: [
+        { id: "cobalt", label: "Cobalt", dark: "#5A95F5", light: "#2F6FEB" },
         { id: "iris",   label: "Iris",   dark: "#8b8fff", light: "#4a4fd8" },
         { id: "azure",  label: "Azure",  dark: "#5ab0f0", light: "#1a6fb0" },
         { id: "mint",   label: "Mint",   dark: "#4cc38a", light: "#17824f" },
         { id: "amber",  label: "Amber",  dark: "#e5b04a", light: "#946500" },
         { id: "rose",   label: "Rose",   dark: "#f28aa8", light: "#c23b6a" }
     ]
-    property string accentName: "iris"
+    property string accentName: "cobalt"
 
     function _accentFor(name, dark) {
         for (let i = 0; i < accentChoices.length; i++) {
             if (accentChoices[i].id === name)
                 return dark ? accentChoices[i].dark : accentChoices[i].light
         }
-        return dark ? "#8b8fff" : "#4a4fd8"
+        return dark ? "#5a95f5" : "#2f6feb"
     }
 
     // --- Spacing scale (4px base) ----------------------------------------

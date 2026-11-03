@@ -121,6 +121,45 @@ def test_accent_swatch_clears_aa_on_accent_ink(accent: str) -> None:
         f"{accent} (light) on accentInk: {ratio_light:.2f}:1 < 4.5:1")
 
 
+# --- The brand hue is the logo's hue ------------------------------------------
+# `cobalt.light` is not a design choice, it is the tile in `ui/branding`, and
+# the default accent is what a fresh install boots into. Both are stated twice —
+# in Theme.qml and in the bridge — and nothing but this test stops them drifting.
+
+_BRAND_TILE_RE = re.compile(r'<rect width="96" height="96" rx="24" fill="(#[0-9A-Fa-f]{6})"')
+_DEFAULT_ACCENT_RE = re.compile(r'property string accentName:\s*"(\w+)"')
+_BRIDGE_DEFAULT_RE = re.compile(r'DEFAULT_ACCENT\s*=\s*"(\w+)"')
+
+
+def test_cobalt_is_the_literal_logo_tile_colour() -> None:
+    mark = (THEME.parent.parent / "branding" / "saaaveit-mark.svg").read_text(
+        encoding="utf-8")
+    tile = _BRAND_TILE_RE.search(mark)
+    assert tile, "could not find the tile fill in ui/branding/saaaveit-mark.svg"
+    assert "cobalt" in _accents(), "Theme.qml lost the brand accent"
+    assert _accents()["cobalt"][1].lower() == tile.group(1).lower(), (
+        f"the cobalt swatch paints {_accents()['cobalt'][1]} but the app icon "
+        f"is {tile.group(1)} — the Settings row would promise a hue the logo "
+        f"does not ship")
+
+
+def test_default_accent_agrees_between_bridge_and_theme() -> None:
+    from app.bridge import DEFAULT_ACCENT
+
+    text = THEME.read_text(encoding="utf-8")
+    theme_default = _DEFAULT_ACCENT_RE.search(text)
+    assert theme_default, "Theme.qml no longer declares an accentName default"
+    assert DEFAULT_ACCENT == theme_default.group(1), (
+        f"the bridge boots {DEFAULT_ACCENT!r} but Theme.qml's own default is "
+        f"{theme_default.group(1)!r}")
+    assert DEFAULT_ACCENT in _accents(), (
+        f"{DEFAULT_ACCENT!r} is not a swatch in Theme.accentChoices")
+    bridge_src = (THEME.parent.parent.parent / "app" / "bridge.py").read_text(
+        encoding="utf-8")
+    assert _BRIDGE_DEFAULT_RE.search(bridge_src), (
+        "the bridge default must stay the module-level DEFAULT_ACCENT constant")
+
+
 # --- Text ramp on its worst surface -------------------------------------------
 # "Worst" = the surface with the lowest contrast for that text colour. The ramp
 # is only guaranteed as running text, so it must clear AA everywhere it lands.

@@ -18,10 +18,16 @@ Item {
     id: root
 
     property string iconName: "info"
+    // Swap the icon badge for the brand tile. Only the empty Library screen
+    // uses it: it is the one screen a user sees before there is anything to
+    // name, so it is the one place the app may introduce itself.
+    property bool brand: false
     property string title: ""
     property string body: ""
     property string actionLabel: ""
     property string actionIcon: "play"
+
+    readonly property bool hasBadge: brand || iconName !== ""
 
     signal actionTriggered()
 
@@ -36,9 +42,15 @@ Item {
         // `.empty b{margin-bottom:4px}`
         spacing: Theme.xs
 
+        Brand {
+            visible: root.brand
+            Layout.alignment: Qt.AlignHCenter
+            size: 44
+        }
+
         Rectangle {
             // `.empty` is text only: a caller that names no icon gets no badge.
-            visible: root.iconName !== ""
+            visible: !root.brand && root.iconName !== ""
             Layout.alignment: Qt.AlignHCenter
             implicitWidth: 44
             implicitHeight: 44
@@ -58,7 +70,7 @@ Item {
 
         Label {
             Layout.fillWidth: true
-            Layout.topMargin: root.iconName !== "" ? Theme.md : 0
+            Layout.topMargin: root.hasBadge ? Theme.md : 0
             text: root.title
             color: Theme.text
             font.pixelSize: Theme.fontTitle

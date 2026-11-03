@@ -11,15 +11,8 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QUrl  # noqa: E402
-from PySide6.QtGui import (  # noqa: E402
-    QColor,
-    QGuiApplication,
-    QIcon,
-    QPainter,
-    QPen,
-    QPixmap,
-)
+from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtGui import QGuiApplication, QIcon  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 from app.bridge import (  # noqa: E402
@@ -76,38 +69,13 @@ def _pin_style() -> None:
 
 
 def _app_icon() -> QIcon:
-    """Draw the window icon in code.
+    """The title-bar, taskbar and Alt-Tab icon, from the C-cobalt pack.
 
-    The frozen bundle ships no image plugins beyond the defaults, so an .ico
-    file would be one more resource that can go missing. The glyph is the same
-    ``download`` stroke path the QML icon set uses.
+    ``saaaveit-favicon.ico`` carries the 16/32/48/64/128/256 px cuts Windows
+    asks for across those three surfaces, and the frozen bundle ships
+    ``plugins/imageformats`` whole, so ``qico.dll`` is there to read it.
     """
-    icon = QIcon()
-    accent = QColor("#8B8FFF")
-    ink = QColor("#0D0E1A")
-    for size in (16, 24, 32, 48, 64, 128, 256):
-        pixmap = QPixmap(size, size)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(accent)
-        radius = size * 0.22
-        painter.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
-
-        scale = size / 24.0
-        pen = QPen(ink, max(1.4, 2.0 * scale))
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
-        painter.setPen(pen)
-        # M12 4v11 M7.5 11l4.5 4.5 4.5-4.5 M4.5 19.5h15
-        painter.drawLine(QPointF(12 * scale, 4 * scale), QPointF(12 * scale, 15.5 * scale))
-        painter.drawLine(QPointF(7.5 * scale, 11 * scale), QPointF(12 * scale, 15.5 * scale))
-        painter.drawLine(QPointF(16.5 * scale, 11 * scale), QPointF(12 * scale, 15.5 * scale))
-        painter.drawLine(QPointF(4.5 * scale, 19.5 * scale), QPointF(19.5 * scale, 19.5 * scale))
-        painter.end()
-        icon.addPixmap(pixmap)
-    return icon
+    return QIcon(_resource_path("ui", "branding", "saaaveit-favicon.ico"))
 
 
 def main() -> int:
@@ -136,6 +104,8 @@ def main() -> int:
     app.setOrganizationName("Njoro")
     app.setApplicationDisplayName("Saaaveit")
     app.setWindowIcon(_app_icon())
+    if app.windowIcon().isNull():
+        logger.warning("Brand icon did not load from ui/branding/saaaveit-favicon.ico")
 
     engine = QQmlApplicationEngine()
     if os.path.isdir(qml_dir):

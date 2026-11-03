@@ -41,6 +41,15 @@ Rectangle {
         anchors.bottomMargin: 12
         spacing: 6
 
+        // The identity sits at the top of the rail, which is the first pixel of
+        // chrome a desktop user reads. It is the fixed cobalt tile, not the
+        // accent — the swatches recolour the controls, never the logo.
+        Brand {
+            Layout.alignment: Qt.AlignHCenter
+            size: 28
+            Layout.bottomMargin: 6
+        }
+
         Repeater {
             model: root.items
 

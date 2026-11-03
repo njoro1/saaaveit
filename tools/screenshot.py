@@ -44,7 +44,7 @@ _SHOTS_SETTINGS.clear()
 _SHOTS_SETTINGS.sync()
 store.settings = lambda: _SHOTS_SETTINGS
 
-from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
+from app.bridge import DEFAULT_ACCENT, DownloaderBridge, register_bundled_fonts  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
 
@@ -208,7 +208,7 @@ def main() -> int:
         bridge.setAccent(choice["id"])
         _settle(app)
         _shoot(root, outdir, f"accent-{choice['id']}-dark")
-    bridge.setAccent("iris")
+    bridge.setAccent(DEFAULT_ACCENT)
 
     # Shortcut recording mid-capture: the armed row and the live error line.
     root.setProperty("currentPage", 2)
