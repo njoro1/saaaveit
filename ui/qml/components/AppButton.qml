@@ -25,9 +25,10 @@ Button {
     // shape's contrast ratio, not a word's.
     property bool selected: false
     // Reference buttons are flex boxes with ``justify-content: center``, so a
-    // button that a Layout *stretches* still keeps its label in the middle
-    // instead of hugging the left edge.
-    property bool centered: false
+    // button that a Layout *stretches* keeps its label in the middle instead of
+    // hugging the left edge. Centered is the default; set ``centered: false``
+    // only where a left-aligned label is the point.
+    property bool centered: true
     // A mono kicker after the label — the top bar's ``Search  Ctrl K``. It is
     // part of the button, not a sibling, so it scales and dims with it.
     property string trailingText: ""

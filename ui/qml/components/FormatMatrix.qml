@@ -86,7 +86,6 @@ ColumnLayout {
         objectName: "download.bestCell"
         Layout.fillWidth: true
         visible: root.hasFormats
-        centered: true
         text: "Best available — let the app choose"
         selected: root.bestEntry !== null && root.bestEntry.selected
         onClicked: root.picked("best", "best")

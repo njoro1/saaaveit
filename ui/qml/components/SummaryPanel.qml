@@ -298,7 +298,6 @@ Rectangle {
                     Layout.preferredHeight: Theme.primaryActionHeight
                     text: root.actionText
                     variant: "primary"
-                    centered: true
                     enabled: root.actionReady
                     onClicked: appBridge.runPrimaryAction()
                 }
