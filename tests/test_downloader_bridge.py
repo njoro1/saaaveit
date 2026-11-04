@@ -345,6 +345,57 @@ class TestCombinedDownload:
         assert ready.subtitleOutcome == "ok"
 
 
+class TestProgressBarHonesty:
+    def test_new_inspection_drops_the_stale_completion(self, ready, tmp_path, monkeypatch):
+        def fake_video(url, selector, out, **kw):
+            path = tmp_path / "v.mp4"
+            path.write_bytes(b"v")
+            return str(path)
+
+        monkeypatch.setattr(media_source, "download_video", fake_video)
+        ready.selectedSubtitleTrack = ""
+        ready.download()
+        assert _wait(lambda: not ready.downloadRunning), ready.downloadStatus
+        assert ready.downloadProgress == 100
+
+        _inspect_another(ready, URL_B, "otherid", "Second video")
+        assert ready.downloadProgress == 0
+        assert ready.downloadStage == ""
+        assert ready.videoOutcome == ""
+
+    def test_the_audio_fragment_cannot_rewind_the_bar(self, ready):
+        """DASH reports a second 0→100 sweep for the audio stream.
+
+        ``_PROGRESS_RE`` matches every fragment, so without a monotonic clamp
+        the bar walks backwards mid-job.
+        """
+        from app.queue import QueueJob
+
+        job = QueueJob(id=99, url=URL_A)
+        ready._active = job
+        try:
+            ready._on_video_percent(100)
+            ready._on_video_percent(20)
+            assert job.progress == 100
+        finally:
+            ready._active = None
+
+    def test_percent_stays_inside_the_leg_it_was_mapped_to(self, ready):
+        from app.queue import QueueJob
+
+        job = QueueJob(id=98, url=URL_A, subtitle_leg_wanted=True)
+        ready._active = job
+        try:
+            ready._on_video_percent(60)
+            assert job.progress == 51
+            ready._on_video_percent(100)
+            assert job.progress == 85
+            ready._on_video_percent(0)
+            assert job.progress == 85
+        finally:
+            ready._active = None
+
+
 class TestCancel:
     def test_cancel_stops_the_operation_and_reports_it(
         self, ready, tmp_path, monkeypatch

@@ -525,7 +525,12 @@ class DownloaderBridge(QObject):
         self._selected_codec = "best"
         self._selected_resolution = "best"
         self._selected_subtitle = ""
+        # A fresh video must not inherit the last job's completion: the panel
+        # reports on ``_last`` while nothing runs, and a 100% green bar over an
+        # inspection is a lie.
+        self._last = None
         self.inspectChanged.emit()
+        self.downloadChanged.emit()
         self._set_status("Inspecting formats and subtitle tracks…")
         self._set_status_state(STATUS_RUNNING)
 
@@ -583,12 +588,16 @@ class DownloaderBridge(QObject):
             "h264": bool(available.get("h264")),
         }
         self._subtitle_tracks = info.get("subtitle_tracks") or []
+        # The finished job that still colours the summary bar belongs to the
+        # previous video; this one starts at zero.
+        self._last = None
         preference_notice = self._apply_format_preference(info)
         self._selected_subtitle = self._default_track_for(info)
         # The fresh result has landed: whatever failed before belongs to a
         # superseded attempt.
         self.dismissFailure()
         self.inspectChanged.emit()
+        self.downloadChanged.emit()
         status = (
             f"Inspected “{self._title}” — {len(self._codecs)} codec(s), "
             f"{len(self._resolutions)} resolution(s), "
@@ -1423,7 +1432,9 @@ class DownloaderBridge(QObject):
             return
         lo, hi = (0, 85) if job.subtitle_leg_wanted else (0, 100)
         value = max(0, min(100, int(percent)))
-        job.progress = lo + (hi - lo) * value // 100
+        # DASH runs a second 0→100 sweep for the audio fragment; the bar may
+        # only ever move forward while one job is active.
+        job.progress = max(job.progress, lo + (hi - lo) * value // 100)
         self.downloadChanged.emit()
 
     def _on_leg_done(self, payload: str) -> None:

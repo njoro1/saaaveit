@@ -149,6 +149,7 @@ Rectangle {
 
             // ------------------------------------------------------- progress
             Rectangle {
+                id: progressTrack
                 objectName: "download.progressTrack"
                 Layout.fillWidth: true
                 Layout.topMargin: 14
@@ -158,37 +159,49 @@ Rectangle {
                 color: Theme.inset
                 clip: true
 
+                // The value fill never moves: an ``Animation on x`` destroys
+                // the ``x`` binding for good, and the completion bar used to
+                // freeze wherever the indeterminate sweep last had it.
                 Rectangle {
                     id: barFill
                     objectName: "download.progressFill"
+                    visible: !root.indeterminate
                     height: parent.height
                     radius: parent.radius
-                    opacity: root.indeterminate ? 0.7 : 1.0
-                    width: root.indeterminate
-                           ? parent.width * 0.3
-                           : parent.width * Math.max(0, Math.min(100, root.shownProgress)) / 100
+                    width: parent.width * Math.max(0, Math.min(100, root.shownProgress)) / 100
                     color: root.finished ? Theme.success
                            : (root.failed ? Theme.error : Theme.accent)
+
+                    Behavior on width {
+                        enabled: !Theme.reducedMotion
+                        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on color {
+                        enabled: !Theme.reducedMotion
+                        ColorAnimation { duration: 140 }
+                    }
+                }
+
+                Rectangle {
+                    id: barSweep
+                    objectName: "download.progressSweep"
+                    visible: root.indeterminate
+                    height: parent.height
+                    width: parent.width * 0.3
+                    radius: parent.radius
+                    color: Theme.accent
+                    opacity: 0.7
 
                     // ``@keyframes ind`` walks a 30% block across the track.
                     SequentialAnimation on x {
                         running: root.indeterminate && !Theme.reducedMotion
                         loops: Animation.Infinite
                         NumberAnimation {
-                            from: -barFill.width
-                            to: barFill.parent.width
+                            from: -barSweep.width
+                            to: progressTrack.width
                             duration: 1100
                             easing.type: Easing.InOutQuad
                         }
-                    }
-
-                    Behavior on width {
-                        enabled: !Theme.reducedMotion && !root.indeterminate
-                        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-                    }
-                    Behavior on color {
-                        enabled: !Theme.reducedMotion
-                        ColorAnimation { duration: 140 }
                     }
                 }
             }
