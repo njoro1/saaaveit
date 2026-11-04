@@ -65,16 +65,6 @@ Item {
             font.letterSpacing: Theme.h1Tracking
             font.bold: true
         }
-
-        Label {
-            objectName: "download.pageSubtitle"
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            text: "Paste a link, pick the exact stream, save it."
-            color: Theme.textMuted
-            font.pixelSize: Theme.fontBody
-            elide: Text.ElideRight
-        }
     }
 
     Item {
@@ -158,14 +148,6 @@ Item {
                             enabled: !page.busy && !appBridge.infoLoading && appBridge.url !== ""
                             onClicked: appBridge.inspect()
                         }
-                    }
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Formats and subtitle tracks are detected automatically."
-                        color: Theme.textMuted
-                        font.pixelSize: Theme.fontSmall
-                        wrapMode: Text.WordWrap
                     }
 
                     Label {
@@ -346,9 +328,6 @@ Item {
                     Layout.fillWidth: true
                     number: 2
                     title: "Format"
-                    note: appBridge.infoLoading ? "Inspecting…"
-                          : (page.inspected ? "Pick the exact stream you want."
-                                            : "Inspect a video to see what it offers.")
                     state: page.step2State
 
                     // While inspecting the reference reserves the matrix with one
@@ -382,11 +361,6 @@ Item {
                     Layout.fillWidth: true
                     number: 3
                     title: "Subtitle"
-                    note: page.inspected
-                          ? (appBridge.hasSubtitleTracks
-                             ? "Downloaded together with the video."
-                             : "This video has no subtitle tracks.")
-                          : "Downloaded together with the video."
                     state: page.step3State
 
                     SubtitleTrackPicker {

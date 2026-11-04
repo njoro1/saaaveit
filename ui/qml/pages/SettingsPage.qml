@@ -215,7 +215,6 @@ Item {
 
                 SettingsRow {
                     label: "Comfortable spacing"
-                    hint: "Larger hit targets and slightly bigger text."
                     AppSwitch {
                         objectName: "settings.comfortable"
                         checked: appBridge.comfortable
@@ -225,7 +224,6 @@ Item {
 
                 SettingsRow {
                     label: "Reduced motion"
-                    hint: "Stops shimmer and sliding progress."
                     AppSwitch {
                         objectName: "settings.reducedMotion"
                         checked: appBridge.reducedMotion
@@ -330,8 +328,6 @@ Item {
 
                 SettingsRow {
                     label: "Log"
-                    hint: "Read it here, copy it, or export it."
-
                     AppButton {
                         objectName: "settings.viewLog"
                         text: "View log"
