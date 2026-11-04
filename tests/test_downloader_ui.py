@@ -648,8 +648,10 @@ class TestQueueList:
 
 class TestSubtitleTrackPicker:
     def test_none_is_always_offered_first(self, ui):
+        # With the shipped default ("none"), an inspection preselects nothing,
+        # so the picker rests on its None row.
         picker = _find(ui.root, "download.subtitleTracks")
-        assert picker.property("selected") == "ja"
+        assert picker.property("selected") == ""
 
     def test_every_track_is_listed(self, ui):
         bridge = ui.bridge
@@ -682,7 +684,7 @@ class TestSubtitleTrackPicker:
             bridge.selectedSubtitleTrack = "ja"
             assert button.property("enabled") is True
         finally:
-            bridge.selectedSubtitleTrack = saved or "ja"
+            bridge.selectedSubtitleTrack = saved
 
     def test_the_selected_row_tints_whichever_row_it_is(self, ui):
         """Review F4: the English row once read a stale ``data`` identifier.

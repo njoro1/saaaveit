@@ -196,7 +196,7 @@ class DownloaderBridge(QObject):
 
     _PERSISTED = (
         ("_download_dir", "downloads/dir", ""),
-        ("_default_subtitle_track", "downloads/subtitleTrack", "original"),
+        ("_default_subtitle_track", "downloads/subtitleTrack", "none"),
         ("_filename_template", "downloads/filenameTemplate", DEFAULT_FILENAME_TEMPLATE),
         ("_theme_name", "ui/theme", "dark"),
         ("_accent_name", "ui/accent", DEFAULT_ACCENT),
@@ -262,7 +262,7 @@ class DownloaderBridge(QObject):
 
         # --- settings / chrome -------------------------------------------
         self._download_dir = ""
-        self._default_subtitle_track = "original"
+        self._default_subtitle_track = "none"
         self._filename_template = DEFAULT_FILENAME_TEMPLATE
         self._theme_name = "dark"
         self._accent_name = DEFAULT_ACCENT
@@ -591,7 +591,7 @@ class DownloaderBridge(QObject):
         self._run_pending_redownload()
 
     def _default_track_for(self, info: dict) -> str:
-        mode = (self._default_subtitle_track or "original").strip().lower()
+        mode = (self._default_subtitle_track or "none").strip().lower()
         tracks = info.get("subtitle_tracks") or []
         if mode == "none":
             return ""
@@ -887,15 +887,15 @@ class DownloaderBridge(QObject):
 
     @defaultSubtitleTrack.setter
     def defaultSubtitleTrack(self, value: str) -> None:
-        self._set_field("_default_subtitle_track", (value or "original").strip())
+        self._set_field("_default_subtitle_track", (value or "none").strip())
 
     @Property(list, notify=formChanged)
     def defaultSubtitleChoices(self) -> list:
         return [
-            {"id": "original", "label": "Original language (recommended)"},
+            {"id": "none", "label": "None — video only (default)"},
+            {"id": "original", "label": "Original language"},
             {"id": "manual", "label": "First manual track"},
             {"id": "auto", "label": "First auto-generated track"},
-            {"id": "none", "label": "None — never preselect"},
         ]
 
     @Property(str, notify=formChanged)

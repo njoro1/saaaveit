@@ -85,9 +85,14 @@ def _set_url(bridge, url: str) -> None:
 
 @pytest.fixture()
 def ready(bridge, tmp_path, monkeypatch):
-    """A bridge with a URL, an inspected video and a writable temp output dir."""
+    """A bridge with a URL, an inspected video and a writable temp output dir.
+
+    Preselection is opt-in since the shipped default became "none", so the
+    combined-download tests ask for it explicitly here.
+    """
     _set_url(bridge, URL_A)
     bridge._download_dir = str(tmp_path)
+    bridge.defaultSubtitleTrack = "original"
     _install(bridge, _payload())
     monkeypatch.setattr(media_source, "probe_video_file", lambda path: {})
     return bridge
@@ -672,7 +677,15 @@ class TestValidation:
 
 
 class TestSubtitlePreselection:
-    def test_original_language_is_selected_by_default(self, bridge, tmp_path):
+    def test_fresh_default_preselects_nothing(self, bridge, tmp_path):
+        bridge._download_dir = str(tmp_path)
+        assert bridge.defaultSubtitleTrack == "none"
+        _install(bridge, _payload())
+        assert bridge.selectedSubtitleTrack == ""
+        assert bridge.selectedSubtitleLabel == "None — video only"
+
+    def test_original_language_mode_selects_the_original(self, bridge, tmp_path):
+        bridge.defaultSubtitleTrack = "original"
         bridge._download_dir = str(tmp_path)
         _install(bridge, _payload())
         assert bridge.selectedSubtitleTrack == "ja"
@@ -697,6 +710,7 @@ class TestSubtitlePreselection:
         assert bridge.selectedSubtitleTrack == "en"
 
     def test_unknown_original_language_selects_nothing(self, bridge, tmp_path):
+        bridge.defaultSubtitleTrack = "original"
         bridge._download_dir = str(tmp_path)
         _install(bridge, _payload(language="fr"))
         assert bridge.selectedSubtitleTrack == ""
