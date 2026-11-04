@@ -101,7 +101,7 @@ def main() -> int:
     app = QGuiApplication(sys.argv)
     register_bundled_fonts()
     app.setApplicationName("Saaaveit")
-    app.setOrganizationName("Njoro")
+    app.setOrganizationName("Saaaveit")
     app.setApplicationDisplayName("Saaaveit")
     app.setWindowIcon(_app_icon())
     if app.windowIcon().isNull():

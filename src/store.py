@@ -12,7 +12,7 @@ import time
 
 from PySide6.QtCore import QSettings
 
-ORGANISATION = "Njoro"
+ORGANISATION = "Saaaveit"
 APPLICATION = "Saaaveit"
 
 DEFAULT_FILENAME_TEMPLATE = "%(title)s [%(id)s]"

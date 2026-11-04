@@ -763,7 +763,7 @@ class TestSettingsPersistence:
         assert [row["path"] for row in reopened.history] == [str(path)]
 
     def test_organisation_and_application_are_this_app_only(self):
-        assert store.ORGANISATION == "Njoro"
+        assert store.ORGANISATION == "Saaaveit"
         assert store.APPLICATION == "Saaaveit"
 
 
