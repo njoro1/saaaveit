@@ -77,7 +77,7 @@ ApplicationWindow {
         if (action === "inspect")
             appBridge.inspect()
         else if (action === "download")
-            appBridge.download()
+            appBridge.runPrimaryAction()
         else if (action === "download_subtitle")
             appBridge.downloadSubtitleOnly()
         else if (action === "cancel")

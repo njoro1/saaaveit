@@ -14,7 +14,6 @@ Item {
 
     objectName: "downloadPage"
 
-    readonly property bool busy: appBridge.downloadRunning
     readonly property bool inspected: appBridge.hasInfo
 
     // Step 2 reads "done" once a *usable* pair is selected - the same fact the
@@ -129,7 +128,6 @@ Item {
                             label: "Video URL"
                             placeholderText: "Paste a video URL"
                             text: appBridge.url
-                            enabled: !page.busy
                             onTextEdited: appBridge.url = text
                             onAccepted: appBridge.url = text
                         }
@@ -137,7 +135,7 @@ Item {
                         AppButton {
                             objectName: "download.clearButton"
                             text: "Clear"
-                            enabled: !page.busy && appBridge.url !== ""
+                            enabled: appBridge.url !== ""
                             onClicked: appBridge.clearSource()
                         }
 
@@ -145,7 +143,7 @@ Item {
                             objectName: "download.inspectButton"
                             text: appBridge.infoLoading ? "Inspecting…" : "Inspect"
                             variant: "primary"
-                            enabled: !page.busy && !appBridge.infoLoading && appBridge.url !== ""
+                            enabled: !appBridge.infoLoading && appBridge.url !== ""
                             onClicked: appBridge.inspect()
                         }
                     }
@@ -349,7 +347,6 @@ Item {
                     FormatMatrix {
                         Layout.fillWidth: true
                         visible: page.inspected && !appBridge.infoLoading
-                        busy: page.busy
                         onPicked: function (codec, resolution) {
                             appBridge.pickFormat(codec, resolution)
                         }
@@ -365,7 +362,7 @@ Item {
 
                     SubtitleTrackPicker {
                         Layout.fillWidth: true
-                        enabled: page.inspected && !page.busy
+                        enabled: page.inspected
                     }
 
                     AppButton {
@@ -373,7 +370,7 @@ Item {
                         text: "Fetch subtitle only"
                         small: true
                         visible: page.inspected
-                        enabled: appBridge.selectedSubtitleTrack !== "" && !page.busy
+                        enabled: appBridge.selectedSubtitleTrack !== ""
                         onClicked: appBridge.downloadSubtitleOnly()
                     }
                 }
@@ -404,7 +401,6 @@ Item {
                         AppButton {
                             text: "Change…"
                             small: true
-                            enabled: !page.busy
                             onClicked: folderPicker.open()
                         }
 

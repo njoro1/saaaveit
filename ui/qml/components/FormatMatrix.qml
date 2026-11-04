@@ -21,9 +21,6 @@ ColumnLayout {
 
     signal picked(string codec, string resolution)
 
-    // A running download must not re-target the streams it is already fetching.
-    property bool busy: false
-
     readonly property var entries: appBridge.formatRows
 
     // ``appBridge.codecs`` is in the source's codec order (AV1, VP9, H.264) with
@@ -91,7 +88,6 @@ ColumnLayout {
         visible: root.hasFormats
         centered: true
         text: "Best available — let the app choose"
-        enabled: !root.busy
         selected: root.bestEntry !== null && root.bestEntry.selected
         onClicked: root.picked("best", "best")
 
@@ -167,7 +163,6 @@ ColumnLayout {
                     // ``Button`` has no selection state; this is the one the
                     // background and the bold label read.
                     property bool selected: slot.offered && slot.modelData.entry.selected
-                    enabled: !root.busy
                     padding: 0
                     spacing: 0
 

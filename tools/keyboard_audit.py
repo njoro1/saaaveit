@@ -114,7 +114,7 @@ def main() -> int:
     saved = os.path.join(_scratch, "Audit video [audit0001].mp4")
     with open(saved, "wb") as handle:
         handle.write(b"not a real video")
-    bridge._record(saved, "video")
+    bridge._record(bridge._capture_job(include_subtitle=True), saved, "video")
     settle(600)
 
     anchor = window.findChild(QQuickItem, "libraryPage")

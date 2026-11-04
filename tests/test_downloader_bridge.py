@@ -585,6 +585,27 @@ class TestQueue:
         # Ids keep counting from the restored jobs, or a new one would collide.
         assert restored._job_seq == 7
 
+    def test_a_video_can_be_inspected_while_a_job_runs(self, ready, monkeypatch):
+        """The form is not locked to the download any more.
+
+        ``inspect_video`` and the thumbnail cache are the only two places this
+        touches the network, so both are replaced; the worker still runs for
+        real, which is the point - the inspection has to land behind a job.
+        """
+        from app import workers
+
+        monkeypatch.setattr(
+            media_source, "inspect_video",
+            lambda url: _payload(video_id="abcdefghijk", title="Second video"),
+        )
+        monkeypatch.setattr(workers, "cache_thumbnail", lambda *a, **k: "")
+        ready._download_running = True
+
+        ready.inspect()
+        assert _wait(lambda: ready.videoId == "abcdefghijk"), ready.statusMessage
+        assert ready.videoTitle == "Second video"
+        assert ready.selectedSubtitleTrack == "ja"
+
     def test_the_primary_action_names_what_the_button_means(
         self, ready, request, tmp_path, monkeypatch
     ):
@@ -1052,16 +1073,25 @@ class TestRedownload:
         assert bridge._pending_redownload is None
         assert runs == []
 
-    def test_redownload_is_refused_while_a_download_runs(self, bridge, tmp_path):
+    def test_a_redownload_lines_up_behind_a_running_download(
+        self, bridge, tmp_path, monkeypatch
+    ):
+        """A job on the wire no longer refuses the Library's "again" button."""
         self._seed(bridge, tmp_path)
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
         bridge._download_running = True
         tabs = []
         bridge.requestTab.connect(tabs.append)
+
         bridge.redownload(0)
-        assert tabs == []
-        assert bridge._pending_redownload is None
-        assert "running download" in bridge.statusMessage
-        bridge._download_running = False
+        assert tabs == [0]
+        assert bridge._pending_redownload["kind"] == "video"
+
+        # The landing inspection queues the job behind the one already running.
+        jobs = []
+        monkeypatch.setattr(bridge, "_enqueue", lambda job: jobs.append(job))
+        _install(bridge, _payload())
+        assert [job.video_id for job in jobs] == ["dQw4w9WgXcQ"]
 
     def test_an_entry_without_a_source_url_says_so(self, bridge, tmp_path):
         path = tmp_path / "clip [dQw4w9WgXcQ].mp4"

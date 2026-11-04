@@ -500,7 +500,7 @@ class DownloaderBridge(QObject):
             self._info_error = "Paste a video URL first."
             self.inspectChanged.emit()
             return
-        if self._info_loading or self._download_running:
+        if self._info_loading:
             return
         self._info_loading = True
         self._info_error = ""
@@ -988,8 +988,13 @@ class DownloaderBridge(QObject):
 
     @Property(bool, notify=canDownloadChanged)
     def canDownload(self) -> bool:
-        return bool(self.hasInfo and self.url and not self._download_running
-                    and bool(self.selectedOption.get("format_selector")))
+        """Whether the current picks are worth committing to the queue.
+
+        A download in flight does not block this: joining the batch is the
+        whole point, and ``primaryAction`` tells the button what it means now.
+        """
+        return bool(self.hasInfo and self.url
+                    and self.selectedOption.get("format_selector"))
 
     # ---------------------------------------------------------------- queue
     @Property(int, notify=queueChanged)
@@ -1646,9 +1651,10 @@ class DownloaderBridge(QObject):
         """Revisit an entry the way the prototype does.
 
         Navigate to Download, load the entry's URL, inspect - and then, when
-        the inspection lands, start what was recorded (the video, or that one
-        subtitle track). The pending note is cleared in ``_on_info_done`` on
-        both paths, so it can never double-fire.
+        the inspection lands, queue what was recorded (the video, or that one
+        subtitle track). A download already in flight does not block this: the
+        new job lines up behind it. The pending note is cleared in
+        ``_on_info_done`` on both paths, so it can never double-fire.
         """
         entry = self._entry(index)
         if not entry:
@@ -1656,9 +1662,6 @@ class DownloaderBridge(QObject):
         url = str(entry.get("url") or "").strip()
         if not url:
             self._set_status("That entry was saved without a source URL.")
-            return
-        if self._download_running:
-            self._set_status("Finish or cancel the running download first.")
             return
         self._pending_redownload = {
             "kind": entry.get("kind") or "video",

@@ -374,6 +374,52 @@ class TestDownloadPage:
         assert ui.bridge.canDownload is True
         assert button.property("enabled") is True
 
+    def test_the_form_stays_live_while_a_job_downloads(self, ui):
+        """Queuing the next video is only useful if the form can be used at all."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        saved = (bridge._download_running, bridge._active, list(bridge._queue))
+        bridge._queue = [QueueJob(id=99, url=bridge._url, title="Running job")]
+        bridge._active = bridge._queue[0]
+        bridge._download_running = True
+        try:
+            bridge.downloadChanged.emit()
+            bridge.queueChanged.emit()
+            _show_page(ui.root, 0, app)
+
+            for name in ("download.urlField", "download.clearButton",
+                         "download.inspectButton", "download.formatMatrix",
+                         "download.bestCell", "download.subtitleTracks",
+                         "download.downloadButton"):
+                assert _find(ui.root, name).property("enabled") is True, name
+
+            button = _find(ui.root, "download.downloadButton")
+            assert button.property("text") == "Add to queue"
+            assert _find(ui.root, "download.cancelButton").property("visible") is True
+            assert _find(ui.root, "download.whyNot").property("visible") is False
+        finally:
+            (bridge._download_running, bridge._active, bridge._queue) = saved
+            bridge.downloadChanged.emit()
+            bridge.queueChanged.emit()
+            app.processEvents()
+
+    def test_a_waiting_queue_offers_to_start_it(self, ui):
+        """Work restored from the last session: nothing runs, so start it."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        saved = list(bridge._queue)
+        bridge._queue = [QueueJob(id=1, url=bridge._url, title="Waiting job")]
+        try:
+            bridge.queueChanged.emit()
+            _show_page(ui.root, 0, app)
+            button = _find(ui.root, "download.downloadButton")
+            assert button.property("text") == "Start queue"
+            assert button.property("enabled") is True
+        finally:
+            bridge._queue = saved
+            bridge.queueChanged.emit()
+            app.processEvents()
+
     def test_a_long_blocked_reason_elides_instead_of_overflowing_the_bar(self, ui):
         """Review F8: a non-filling Layout item is sized to its preferred width.
 

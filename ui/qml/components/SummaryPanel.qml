@@ -55,8 +55,16 @@ Rectangle {
     readonly property bool failed: appBridge.statusState === "failed"
         || appBridge.statusState === "cancelled"
 
-    readonly property string whyNot: busy || appBridge.canDownload
+    readonly property string whyNot: root.actionReady
         ? "" : (appBridge.hasInfo ? "Choose a format to continue." : "Inspect a video first.")
+
+    // The one button means three things, and the bridge decides which: commit a
+    // new job, join the batch already running, or start a queue that came back
+    // from the last session stopped.
+    readonly property string actionKind: appBridge.primaryAction
+    readonly property string actionText: actionKind === "queue"
+        ? "Add to queue" : (actionKind === "start" ? "Start queue" : "Download")
+    readonly property bool actionReady: actionKind === "start" || appBridge.canDownload
 
     readonly property var legs: {
         var out = []
@@ -288,11 +296,11 @@ Rectangle {
                     objectName: "download.downloadButton"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.primaryActionHeight
-                    text: root.busy ? "Downloading…" : "Download"
+                    text: root.actionText
                     variant: "primary"
                     centered: true
-                    enabled: appBridge.canDownload
-                    onClicked: appBridge.download()
+                    enabled: root.actionReady
+                    onClicked: appBridge.runPrimaryAction()
                 }
 
                 AppButton {

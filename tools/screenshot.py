@@ -52,6 +52,9 @@ QML_DIR = ROOT / "ui" / "qml"
 def _seed_history(bridge) -> None:
     """Three demo rows so the Library page has something to show."""
     demo = Path(tempfile.mkdtemp(prefix="saaaveit-demo-"))
+    # The rows describe the video the shot is showing, so the job the bridge
+    # would have filed them under is the one captured from the current form.
+    job = bridge._capture_job(include_subtitle=True)
     rows = [
         ("Demo video [dQw4w9WgXcQ].mp4", "video", True),
         ("Demo video [dQw4w9WgXcQ].ja.srt", "subtitle", True),
@@ -61,7 +64,7 @@ def _seed_history(bridge) -> None:
         path = demo / name
         if exists:
             path.write_bytes(b"x" * 3072)
-        bridge._record(str(path), kind)
+        bridge._record(job, str(path), kind)
 
 
 def _payload() -> dict:
