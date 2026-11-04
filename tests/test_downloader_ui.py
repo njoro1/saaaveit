@@ -378,6 +378,31 @@ class TestDownloadPage:
         assert ui.bridge.canDownload is True
         assert button.property("enabled") is True
 
+    def test_paste_button_pushes_the_clipboard_into_the_url(self, ui, monkeypatch):
+        button = _find(ui.root, "download.pasteButton")
+        assert button is not None
+        bridge = ui.bridge
+        # The setter inspects; the harness feeds payloads, not the network.
+        monkeypatch.setattr(bridge, "inspect", lambda: None)
+        saved_url = bridge._url
+        clip = QGuiApplication.clipboard()
+        saved_clip = clip.text()
+        try:
+            bridge._url = ""
+            clip.setText("https://example.com/pasted?v=abcd\nsecond line")
+            _press(button)
+            assert bridge.url == "https://example.com/pasted?v=abcd"
+        finally:
+            clip.setText(saved_clip or "")
+            bridge._url = saved_url
+            # The paste went through the real setter, so the inspection state
+            # of the module-shared bridge is gone. Re-install the fixture's
+            # payload the way the fixture itself does.
+            bridge._info_gen += 1
+            bridge._on_info_done(
+                f"INFO:{bridge._info_gen}|" + json.dumps(_info_payload()))
+            bridge._notify_form_changed()
+
     def test_the_form_stays_live_while_a_job_downloads(self, ui):
         """Queuing the next video is only useful if the form can be used at all."""
         app = QGuiApplication.instance()

@@ -133,6 +133,22 @@ Item {
                         }
 
                         AppButton {
+                            objectName: "download.pasteButton"
+                            text: "Paste"
+                            variant: "ghost"
+                            tooltip: "Take the URL from the clipboard"
+                            enabled: !appBridge.infoLoading
+                            // ``text`` is bound to the bridge, so assigning
+                            // the bridge fills the field too; the setter
+                            // starts the inspection.
+                            onClicked: {
+                                var t = appBridge.clipboardText()
+                                if (t !== "")
+                                    appBridge.url = t
+                            }
+                        }
+
+                        AppButton {
                             objectName: "download.clearButton"
                             text: "Clear"
                             enabled: appBridge.url !== ""

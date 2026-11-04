@@ -484,6 +484,19 @@ class DownloaderBridge(QObject):
     def clearSource(self) -> None:
         self.url = ""
 
+    @Slot(result=str)
+    def clipboardText(self) -> str:
+        """The clipboard's first non-empty line, for the Paste button.
+
+        Returned rather than assigned: the URL field must show the text too,
+        and a programmatic ``text`` change does not fire ``onTextEdited``, so
+        QML sets the bridge explicitly.
+        """
+        for line in (QGuiApplication.clipboard().text() or "").splitlines():
+            if line.strip():
+                return line.strip()
+        return ""
+
     def _reset_inspection(self) -> None:
         self._info_error = ""
         self._title = ""
@@ -501,7 +514,9 @@ class DownloaderBridge(QObject):
         self._selected_codec = "best"
         self._selected_resolution = "best"
         self._selected_subtitle = ""
+        self._last = None
         self.inspectChanged.emit()
+        self.downloadChanged.emit()
 
     # --------------------------------------------------------- inspection
     @Slot()

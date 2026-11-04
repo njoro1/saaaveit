@@ -1261,3 +1261,18 @@ class TestRedownload:
         bridge.redownload(0)
         assert bridge._pending_redownload is None
         assert "without a source URL" in bridge.statusMessage
+
+
+class TestClipboardText:
+    def test_clipboardtext_returns_the_first_non_empty_line(self, bridge):
+        from PySide6.QtGui import QGuiApplication
+
+        clip = QGuiApplication.clipboard()
+        saved = clip.text()
+        try:
+            clip.setText("  \nhttps://example.com/watch?v=abcd\ntrailing")
+            assert bridge.clipboardText() == "https://example.com/watch?v=abcd"
+            clip.setText("")
+            assert bridge.clipboardText() == ""
+        finally:
+            clip.setText(saved or "")
