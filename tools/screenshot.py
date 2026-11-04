@@ -45,6 +45,7 @@ _SHOTS_SETTINGS.sync()
 store.settings = lambda: _SHOTS_SETTINGS
 
 from app.bridge import DEFAULT_ACCENT, DownloaderBridge, register_bundled_fonts  # noqa: E402
+from app.queue import DONE, QUEUED, RUNNING, QueueJob  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
 
@@ -110,6 +111,30 @@ def _seed_log(bridge) -> None:
         "WARNING: unable to download the thumbnail, using a placeholder\n"
         "ERROR: HTTP Error 403: Forbidden while fetching the video\n"
     )
+
+
+def _seed_queue(bridge) -> list:
+    """Three committed jobs, one per visible state, for the queue card.
+
+    The states are written directly rather than downloaded: a shot has to show
+    a saved row beside a live one without waiting on the network.
+    """
+    saved = QueueJob(id=1, url=bridge._url, title="First video",
+                    format_label="1080p · mp4")
+    saved.state = DONE
+    saved.video_outcome = "ok"
+    inflight = QueueJob(id=2, url=bridge._url, title="Second video",
+                        format_label="720p · webm", subtitle_lang="ja",
+                        subtitle_label="Japanese", subtitle_leg_wanted=True,
+                        state=RUNNING, progress=40)
+    waiting = QueueJob(id=3, url=bridge._url, title="Third video",
+                       format_label="480p · mp4", state=QUEUED)
+    bridge._queue = [saved, inflight, waiting]
+    bridge._active = inflight
+    bridge._download_running = True
+    bridge.queueChanged.emit()
+    bridge.downloadChanged.emit()
+    return [saved, inflight, waiting]
 
 
 def _settle(app, ms: int = 260) -> None:
@@ -195,6 +220,26 @@ def main() -> int:
     _settle(app)
     _shoot(root, outdir, "failure-banner-dark")
     bridge.dismissFailure()
+
+    # A committed batch: one row saved, one in flight, one still waiting. The
+    # card is at the foot of the flow, so the shot scrolls down to it the way a
+    # user would after queueing a second video. ``ScrollView`` is the frame, not
+    # the scroller: the content offset belongs to the flickable inside it.
+    _seed_queue(bridge)
+    _settle(app)          # the card's height is only real after a layout pass
+    scroller = root.findChild(QQuickItem, "download.flowScroller")
+    lane = next((child for child in scroller.children()
+                 if child.metaObject().className().startswith("QQuickFlickable")), None)
+    if lane is not None:
+        lane.setProperty("contentY", max(
+            0, lane.property("contentHeight") - lane.property("height")))
+    _settle(app)
+    _shoot(root, outdir, "queue-batch-dark")
+    bridge._queue = []
+    bridge._active = None
+    bridge._download_running = False
+    bridge.queueChanged.emit()
+    bridge.downloadChanged.emit()
 
     # Comfortable spacing on the densest page.
     bridge.setComfortable(True)

@@ -413,6 +413,15 @@ Item {
                     }
                 }
 
+                // The batch goes at the foot of the flow, not beside the
+                // summary: the rail is already full while a job runs, a row
+                // needs the flow's width to put a title beside its action, and
+                // appending here cannot shift the form the user is still filling in.
+                QueueList {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.md
+                }
+
                 Item { Layout.preferredHeight: Theme.lg }
             }
         }

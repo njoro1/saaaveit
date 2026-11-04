@@ -20,6 +20,7 @@ KeyValue 1.0 KeyValue.qml
 LibraryDrawer 1.0 LibraryDrawer.qml
 LogDialog 1.0 LogDialog.qml
 MediaThumb 1.0 MediaThumb.qml
+QueueList 1.0 QueueList.qml
 ReadinessChecklist 1.0 ReadinessChecklist.qml
 SegmentedControl 1.0 SegmentedControl.qml
 SettingsRow 1.0 SettingsRow.qml

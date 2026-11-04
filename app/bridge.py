@@ -1050,7 +1050,6 @@ class DownloaderBridge(QObject):
                 "downloadDir": job.download_dir,
                 "active": job is self._active,
                 "waiting": job.state == QUEUED,
-                "cancellable": job.state in (QUEUED, RUNNING),
                 "removable": job.is_terminal,
             })
         return rows
@@ -1307,8 +1306,10 @@ class DownloaderBridge(QObject):
         elif "merging formats into" in lowered or lowered.startswith("[merger]"):
             job.stage = "merging"
         job.status = job.status[-20000:]
+        # ``downloadChanged`` only: the row list is rebuilt wholesale on
+        # ``queueChanged``, and a percent line arrives many times a second. The
+        # live figures come from the scalar properties, the list carries states.
         self.downloadChanged.emit()
-        self.queueChanged.emit()
 
     def _on_video_percent(self, percent: int) -> None:
         job = self._active
@@ -1318,7 +1319,6 @@ class DownloaderBridge(QObject):
         value = max(0, min(100, int(percent)))
         job.progress = lo + (hi - lo) * value // 100
         self.downloadChanged.emit()
-        self.queueChanged.emit()
 
     def _on_leg_done(self, payload: str) -> None:
         if self._payload_token(payload) != self._op_gen:

@@ -19,7 +19,7 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
 from src import media_source
-from app.queue import QueueJob
+from app.queue import DONE, FAILED, RUNNING, QueueJob
 
 QML_DIR = Path(__file__).resolve().parent.parent / "ui" / "qml"
 
@@ -487,6 +487,163 @@ class TestDownloadPage:
         finally:
             bridge.selectedCodec = bridge.codecs[0]["id"]
             bridge.selectedResolution = saved
+
+
+@contextlib.contextmanager
+def _batch(bridge):
+    """Seed three committed jobs: one saved, one in flight, one still waiting.
+
+    The ``ui`` bridge is shared by the whole module, so the queue is handed back
+    as it was found. Nothing here runs a real download: the states are written
+    directly, which is exactly what the card reads.
+    """
+    app = QGuiApplication.instance()
+    saved = (bridge._download_running, bridge._active, list(bridge._queue))
+    finished = QueueJob(id=1, url=bridge._url, title="First video",
+                        format_label="1080p · mp4")
+    finished.state = DONE
+    finished.video_outcome = "ok"
+    inflight = QueueJob(id=2, url=bridge._url, title="Second video",
+                        format_label="720p · webm", subtitle_lang="ja",
+                        subtitle_label="Japanese", subtitle_leg_wanted=True)
+    inflight.state = RUNNING
+    waiting = QueueJob(id=3, url=bridge._url, title="Third video",
+                       format_label="480p · mp4")
+    bridge._queue = [finished, inflight, waiting]
+    bridge._active = inflight
+    bridge._download_running = True
+    bridge.queueChanged.emit()
+    bridge.downloadChanged.emit()
+    app.processEvents()
+    try:
+        yield bridge._queue
+    finally:
+        (bridge._download_running, bridge._active, bridge._queue) = saved
+        # Both notifies: the card reads the queue, the button and the banner
+        # read the lane, and a binding left stale here outlives the test.
+        bridge.queueChanged.emit()
+        bridge.downloadChanged.emit()
+        app.processEvents()
+
+
+def _queue_rows(root: QObject, app) -> list:
+    """The rendered queue rows, in list order, as ``objectName -> item``.
+
+    ``findChild`` reaches only the first match and delegates are not its
+    children, so each row is taken from the view's own visual subtree.
+    """
+    view = _find_item(root, "queue.list")
+    rows = [item for item in _visual_tree(view)
+            if item.property("objectName") == "queue.row"]
+    rows.sort(key=lambda item: item.y())
+    out = []
+    for row in rows:
+        cells = {}
+        for item in _visual_tree(row):
+            name = str(item.property("objectName") or "")
+            if name:
+                cells.setdefault(name, item)
+        out.append(cells)
+    return out
+
+
+class TestQueueList:
+    """The card that lets a batch be watched and pruned one job at a time."""
+
+    def test_no_card_without_a_queue(self, ui):
+        """An empty queue must not hold a slot in the flow."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        saved = list(bridge._queue)
+        bridge._queue = []
+        try:
+            bridge.queueChanged.emit()
+            _show_page(ui.root, 0, app)
+            assert _find(ui.root, "queue.card").property("visible") is False
+        finally:
+            bridge._queue = saved
+            bridge.queueChanged.emit()
+            app.processEvents()
+
+    def test_one_row_per_job_in_queue_order(self, ui):
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge):
+            _show_page(ui.root, 0, app)
+            assert _find(ui.root, "queue.card").property("visible") is True
+            rows = _queue_rows(ui.root, app)
+            assert len(rows) == 3, [row["queue.rowTitle"].property("text")
+                                    for row in rows]
+            assert [row["queue.rowTitle"].property("text") for row in rows] == [
+                "1.  First video", "2.  Second video", "3.  Third video"]
+            assert _find(ui.root, "queue.count").property("text") == "1 waiting"
+
+    def test_each_row_states_its_own_state_and_picks(self, ui):
+        """A row is the only place a waiting job says what it will fetch."""
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge):
+            _show_page(ui.root, 0, app)
+            rows = _queue_rows(ui.root, app)
+            assert [row["queue.rowDetail"].property("text") for row in rows] == [
+                "Saved · 1080p · mp4",
+                "Downloading 2 of 3 · 720p · webm · Japanese",
+                "Waiting · 480p · mp4"]
+
+    def test_only_the_in_flight_row_can_be_cancelled(self, ui):
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge):
+            _show_page(ui.root, 0, app)
+            rows = _queue_rows(ui.root, app)
+            assert [row["queue.rowAction"].property("text")
+                    for row in rows] == ["Remove", "Cancel", "Remove"]
+
+            _press(rows[2]["queue.rowAction"])
+            app.processEvents()
+            assert [job.id for job in ui.bridge._queue] == [1, 2]
+
+    def test_the_running_row_carries_the_live_bar(self, ui):
+        """The bar reads the scalar property, so the row model never rebuilds for it."""
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge) as jobs:
+            _show_page(ui.root, 0, app)
+            bridge = ui.bridge
+            jobs[1].progress = 40          # the active job, so the scalar follows
+            bridge.downloadChanged.emit()
+            _show_page(ui.root, 0, app)
+            assert bridge.downloadProgress == 40
+
+            rows = _queue_rows(ui.root, app)
+            track = rows[1]["queue.rowProgress"]
+            assert track.property("visible") is True
+            assert rows[0]["queue.rowProgress"].property("visible") is False
+            # The bar eases to its target over 180ms, so the settled width is
+            # what has to be measured.
+            QTest.qWait(300)
+            app.processEvents()
+            assert rows[1]["queue.rowProgressFill"].property("width") == pytest.approx(
+                track.property("width") * 0.4, abs=1.0)
+
+    def test_a_failed_row_keeps_its_reason(self, ui):
+        """The batch carries on after a failure, so the reason belongs on the row."""
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge) as jobs:
+            jobs[1].state = FAILED
+            jobs[1].video_outcome = "failed"
+            jobs[1].error = "HTTP Error 403: Forbidden"
+            ui.bridge.queueChanged.emit()
+            _show_page(ui.root, 0, app)
+            row = _queue_rows(ui.root, app)[1]
+            assert row["queue.rowDetail"].property("text").startswith("Failed")
+            assert row["queue.rowError"].property("visible") is True
+            assert row["queue.rowError"].property("text") == "HTTP Error 403: Forbidden"
+
+    def test_clearing_the_queue_leaves_only_the_running_job(self, ui):
+        app = QGuiApplication.instance()
+        with _batch(ui.bridge):
+            _show_page(ui.root, 0, app)
+            _press(_find(ui.root, "queue.clearButton"))
+            app.processEvents()
+            assert [job.id for job in ui.bridge._queue] == [2]
+            assert len(_queue_rows(ui.root, app)) == 1
 
 
 class TestSubtitleTrackPicker:
