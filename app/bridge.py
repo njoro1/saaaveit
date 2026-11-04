@@ -197,6 +197,8 @@ class DownloaderBridge(QObject):
     _PERSISTED = (
         ("_download_dir", "downloads/dir", ""),
         ("_default_subtitle_track", "downloads/subtitleTrack", "none"),
+        ("_preferred_codec", "downloads/preferredCodec", ""),
+        ("_preferred_resolution", "downloads/preferredResolution", ""),
         ("_filename_template", "downloads/filenameTemplate", DEFAULT_FILENAME_TEMPLATE),
         ("_theme_name", "ui/theme", "dark"),
         ("_accent_name", "ui/accent", DEFAULT_ACCENT),
@@ -263,6 +265,8 @@ class DownloaderBridge(QObject):
         # --- settings / chrome -------------------------------------------
         self._download_dir = ""
         self._default_subtitle_track = "none"
+        self._preferred_codec = ""
+        self._preferred_resolution = ""
         self._filename_template = DEFAULT_FILENAME_TEMPLATE
         self._theme_name = "dark"
         self._accent_name = DEFAULT_ACCENT
@@ -579,18 +583,21 @@ class DownloaderBridge(QObject):
             "h264": bool(available.get("h264")),
         }
         self._subtitle_tracks = info.get("subtitle_tracks") or []
-        self._selected_codec = self._codecs[0] if self._codecs else "best"
-        self._selected_resolution = "best"
+        preference_notice = self._apply_format_preference(info)
         self._selected_subtitle = self._default_track_for(info)
         # The fresh result has landed: whatever failed before belongs to a
         # superseded attempt.
         self.dismissFailure()
         self.inspectChanged.emit()
-        self._set_status(
+        status = (
             f"Inspected “{self._title}” — {len(self._codecs)} codec(s), "
             f"{len(self._resolutions)} resolution(s), "
             f"{len(self._subtitle_tracks)} subtitle track(s)."
         )
+        if preference_notice:
+            status = f"{status} {preference_notice}"
+            self._append_log(f"[warn] {preference_notice}\n")
+        self._set_status(status)
         self._set_status_state(STATUS_READY)
         # After the inspection status: a redownload that refuses to start
         # ("that track is no longer offered") must overwrite it, not be
@@ -608,6 +615,48 @@ class DownloaderBridge(QObject):
             if track.get("kind") == mode:
                 return str(track.get("code") or "")
         return ""
+
+    def _apply_format_preference(self, info: dict) -> str:
+        """Preselect the remembered codec/resolution; return a warning if not served.
+
+        An unset preference keeps the historic behaviour: the first offered
+        codec at Best resolution. The preference is only ever written by the
+        first download or by Settings, so a video that cannot serve it is the
+        exception and must say so rather than silently disagreeing.
+        """
+        codec = (self._preferred_codec or "").strip().lower()
+        resolution = str(self._preferred_resolution or "").strip().lower()
+        fallback = self._codecs[0] if self._codecs else "best"
+        if not codec:
+            self._selected_codec = fallback
+            self._selected_resolution = "best"
+            return ""
+        if codec == "best":
+            self._selected_codec = "best"
+            self._selected_resolution = "best"
+            return ""
+        if codec not in self._codecs:
+            self._selected_codec = fallback
+            self._selected_resolution = "best"
+            return (
+                f"This video has no {codec.upper()} streams — showing "
+                f"{fallback.upper()} at Best instead. Change it in step 2 "
+                "or under Settings → Preferred format."
+            )
+        self._selected_codec = codec
+        wanted = media_source.normalize_resolution(resolution)
+        if wanted == "best":
+            self._selected_resolution = "best"
+            return ""
+        family = self._matrix.get(codec) or {}
+        if str(wanted) in {str(h) for h in family}:
+            self._selected_resolution = wanted
+            return ""
+        self._selected_resolution = "best"
+        return (
+            f"This video has no {codec.upper()} at {wanted}p — resolution "
+            "reset to Best. Change it in step 2 or under Settings → Preferred format."
+        )
 
     @staticmethod
     def _payload_token(payload: str) -> int:
@@ -905,6 +954,48 @@ class DownloaderBridge(QObject):
             {"id": "auto", "label": "First auto-generated track"},
         ]
 
+    # ------------------------------------------------- preferred format pick
+    @Property(str, notify=formChanged)
+    def preferredCodec(self) -> str:
+        return self._preferred_codec
+
+    @preferredCodec.setter
+    def preferredCodec(self, value: str) -> None:
+        self._set_field("_preferred_codec", (value or "").strip().lower())
+
+    @Property(str, notify=formChanged)
+    def preferredResolution(self) -> str:
+        return self._preferred_resolution
+
+    @preferredResolution.setter
+    def preferredResolution(self, value) -> None:
+        # "best" and "" behave identically in the preselection, so they
+        # collapse to one stored value the Settings combo can round-trip.
+        text = media_source.normalize_resolution(value)
+        self._set_field("_preferred_resolution", "" if text == "best" else text)
+
+    @Property(list, notify=formChanged)
+    def preferredCodecChoices(self) -> list:
+        return [
+            {"id": "", "label": "No preference"},
+            {"id": "best", "label": "Best available"},
+            {"id": "av1", "label": "AV1"},
+            {"id": "vp9", "label": "VP9"},
+            {"id": "h264", "label": "H.264"},
+        ]
+
+    @Property(list, notify=formChanged)
+    def preferredResolutionChoices(self) -> list:
+        return [
+            {"id": "", "label": "No preference"},
+            {"id": "2160", "label": "2160p"},
+            {"id": "1440", "label": "1440p"},
+            {"id": "1080", "label": "1080p"},
+            {"id": "720", "label": "720p"},
+            {"id": "480", "label": "480p"},
+            {"id": "360", "label": "360p"},
+        ]
+
     @Property(str, notify=formChanged)
     def filenameTemplate(self) -> str:
         return self._filename_template
@@ -1198,6 +1289,14 @@ class DownloaderBridge(QObject):
             )
             return
         self._queue.append(job)
+        if job.kind == "video" and not self._preferred_codec:
+            # The first download establishes the format preference; from then
+            # on only Settings changes it. The job's frozen picks are what the
+            # user actually committed to, not whatever the form shows now.
+            self._preferred_codec = str(job.codec or "")
+            wanted = media_source.normalize_resolution(job.resolution)
+            self._preferred_resolution = "" if wanted == "best" else wanted
+            self._notify_form_changed()
         self._persist_queue()
         self.queueChanged.emit()
         self._pump()

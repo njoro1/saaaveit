@@ -716,6 +716,88 @@ class TestSubtitlePreselection:
         assert bridge.selectedSubtitleTrack == ""
 
 
+class TestFormatPreselection:
+    """The remembered codec/resolution drives the post-Inspect pick.
+
+    An unset preference must not change the historic behaviour; a set one must
+    preselect exactly, and say so in the status line and the log's warning
+    count when the video cannot serve it.
+    """
+
+    def test_unset_preference_keeps_the_historic_default(self, bridge):
+        _install(bridge, _wide_payload())
+        assert bridge.selectedCodec == "av1"
+        assert bridge.selectedResolution == "best"
+        assert bridge.logWarnCount == 0
+
+    def test_preference_preselects_both_halves(self, bridge):
+        bridge.preferredCodec = "vp9"
+        bridge.preferredResolution = "720"
+        _install(bridge, _wide_payload())
+        assert bridge.selectedCodec == "vp9"
+        assert bridge.selectedResolution == "720"
+        assert bridge.logWarnCount == 0
+
+    def test_best_preference_selects_the_escape_hatch(self, bridge):
+        bridge.preferredCodec = "best"
+        _install(bridge, _wide_payload())
+        assert bridge.selectedCodec == "best"
+        assert bridge.selectedResolution == "best"
+
+    def test_a_missing_codec_falls_back_and_warns(self, bridge):
+        bridge.preferredCodec = "h264"
+        _install(bridge, _payload())  # av1 only
+        assert bridge.selectedCodec == "av1"
+        assert bridge.selectedResolution == "best"
+        assert "no H264" in bridge.statusMessage
+        assert bridge.logWarnCount == 1
+
+    def test_a_missing_resolution_keeps_the_codec(self, bridge):
+        bridge.preferredCodec = "vp9"
+        bridge.preferredResolution = "1080"
+        _install(bridge, _wide_payload())  # vp9 tops out at 720
+        assert bridge.selectedCodec == "vp9"
+        assert bridge.selectedResolution == "best"
+        assert "no VP9 at 1080p" in bridge.statusMessage
+        assert bridge.logWarnCount == 1
+
+    def test_the_first_download_saves_the_preference(self, ready, monkeypatch, tmp_path):
+        _install(ready, _wide_payload())
+        ready.selectedSubtitleTrack = ""
+        ready.pickFormat("av1", 1080)
+        calls = []
+
+        def fake_video(url, selector, out, **kwargs):
+            calls.append(selector)
+            path = tmp_path / "v.mp4"
+            path.write_bytes(b"v")
+            return str(path)
+
+        monkeypatch.setattr(media_source, "download_video", fake_video)
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert ready.preferredCodec == "av1"
+        assert ready.preferredResolution == "1080"
+
+        # A later download with different picks must not overwrite it.
+        ready.pickFormat("vp9", 720)
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert ready.preferredCodec == "av1"
+        assert ready.preferredResolution == "1080"
+
+    def test_preference_survives_a_restart(self, bridge):
+        bridge.preferredCodec = "vp9"
+        bridge.preferredResolution = "720"
+        bridge.saveSettings()
+
+        from app.bridge import DownloaderBridge
+
+        reopened = DownloaderBridge()
+        assert reopened.preferredCodec == "vp9"
+        assert reopened.preferredResolution == "720"
+
+
 class TestSettingsPersistence:
     def test_download_dir_survives_a_restart(self, bridge, tmp_path):
         target = tmp_path / "downloads"

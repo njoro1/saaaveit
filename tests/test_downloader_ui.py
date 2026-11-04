@@ -61,6 +61,10 @@ def ui(qml_main):
     # below is synthetic, so no live request should ever start.
     bridge._url = "https://example.com/video?v=dQw4w9WgXcQ"
     bridge._notify_form_changed()
+    # Downloads in other modules save the format preference on their first
+    # job; the shared session bridge must hand every module a clean slate.
+    bridge.preferredCodec = ""
+    bridge.preferredResolution = ""
     bridge._info_gen += 1
     bridge._on_info_done(f"INFO:{bridge._info_gen}|" + json.dumps(_info_payload()))
     qml_main.warnings.clear()
@@ -1185,6 +1189,23 @@ class TestSettingsPage:
             assert bridge.defaultSubtitleTrack == "auto"
         finally:
             bridge.defaultSubtitleTrack = saved
+
+    def test_preferred_format_controls_round_trip(self, ui):
+        bridge = ui.bridge
+        saved = (bridge.preferredCodec, bridge.preferredResolution)
+        try:
+            _find(ui.root, "settings.preferredCodec")
+            _find(ui.root, "settings.preferredResolution")
+            bridge.preferredCodec = "vp9"
+            bridge.preferredResolution = "720"
+            assert bridge.preferredCodec == "vp9"
+            assert bridge.preferredResolution == "720"
+            # "best" and "no preference" behave alike, so they collapse.
+            bridge.preferredResolution = "best"
+            assert bridge.preferredResolution == ""
+        finally:
+            bridge.preferredCodec = saved[0]
+            bridge.preferredResolution = saved[1]
 
 
 class TestKeyboardReachability:

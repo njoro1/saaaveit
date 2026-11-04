@@ -279,6 +279,41 @@ Item {
                         writeValue: function (value) { appBridge.defaultSubtitleTrack = value }
                     }
                 }
+
+                SettingsRow {
+                    label: "Preferred format"
+                    hint: "Saved with your first download and preselected on every video. Saaaveit warns when a video cannot serve it."
+
+                    RowLayout {
+                        spacing: 8
+
+                        BoundComboBox {
+                            objectName: "settings.preferredCodec"
+                            Layout.preferredWidth: 190
+                            Layout.minimumWidth: 120
+                            label: "Preferred codec"
+                            textRole: "label"
+                            valueRole: "id"
+                            model: appBridge.preferredCodecChoices
+                            selectFirstWhenMissing: true
+                            readValue: function () { return appBridge.preferredCodec }
+                            writeValue: function (value) { appBridge.preferredCodec = value }
+                        }
+
+                        BoundComboBox {
+                            objectName: "settings.preferredResolution"
+                            Layout.preferredWidth: 170
+                            Layout.minimumWidth: 110
+                            label: "Preferred resolution"
+                            textRole: "label"
+                            valueRole: "id"
+                            model: appBridge.preferredResolutionChoices
+                            selectFirstWhenMissing: true
+                            readValue: function () { return appBridge.preferredResolution }
+                            writeValue: function (value) { appBridge.preferredResolution = value }
+                        }
+                    }
+                }
             }
 
             // ------------------------------------------------- SHORTCUTS
