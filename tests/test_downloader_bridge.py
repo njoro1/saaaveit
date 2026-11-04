@@ -1,4 +1,4 @@
-"""The download operation: one action, two legs, two outcomes.
+"""The download queue: many jobs committed, two legs each, one at a time.
 
 The behaviour these tests pin down is the whole point of the app:
 
@@ -6,12 +6,15 @@ The behaviour these tests pin down is the whole point of the app:
   * a *failed* video leg still lets the subtitle leg run,
   * each leg reports its own outcome, and the history records what succeeded,
   * cancelling stops the operation and says so,
-  * the subtitle preselection follows the persisted default.
+  * the subtitle preselection follows the persisted default,
+  * a second download waits its turn instead of being refused, and is filed
+    under the picks it was queued with rather than the ones on screen now.
 """
 from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 
 import pytest
@@ -30,11 +33,22 @@ def _matrix() -> tuple[dict, dict]:
     ])[2:]
 
 
-def _payload(language="ja", tracks=None) -> dict:
+# The queue tests need several distinct videos; the id is what the fakes name
+# their saved files after, so one url cannot stand in for another.
+URL_A = "https://example.com/video?v=dQw4w9WgXcQ"
+URL_B = "https://example.com/video?v=abcdefghijk"
+URL_C = "https://example.com/video?v=lmnopqrstuv"
+
+
+def _vid(url: str) -> str:
+    return url.rpartition("=")[2]
+
+
+def _payload(language="ja", tracks=None, video_id="dQw4w9WgXcQ", title="Test video") -> dict:
     matrix, best = _matrix()
     return {
-        "title": "Test video",
-        "video_id": "dQw4w9WgXcQ",
+        "title": title,
+        "video_id": video_id,
         "language": language,
         "codecs": ["av1"],
         "resolutions": [1080],
@@ -72,11 +86,48 @@ def _set_url(bridge, url: str) -> None:
 @pytest.fixture()
 def ready(bridge, tmp_path, monkeypatch):
     """A bridge with a URL, an inspected video and a writable temp output dir."""
-    _set_url(bridge, "https://example.com/video?v=dQw4w9WgXcQ")
+    _set_url(bridge, URL_A)
     bridge._download_dir = str(tmp_path)
     _install(bridge, _payload())
     monkeypatch.setattr(media_source, "probe_video_file", lambda path: {})
     return bridge
+
+
+def _job(bridge, **fields):
+    """A job holding the bridge's current picks, for tests that seed a result.
+
+    ``_record`` files what the *job* described rather than what the form says
+    now, so a test planting a library row has to hand it one. The fields mirror
+    what ``_capture_job`` freezes, so a seeded row reads like a real one.
+    """
+    from app.queue import QueueJob
+
+    job = QueueJob(
+        id=1,
+        url=bridge._url,
+        video_id=bridge._video_id,
+        title=bridge._title,
+        duration=bridge._duration,
+        codec=bridge._selected_codec,
+        resolution=str(bridge._selected_resolution),
+        format_selector=bridge._selector(),
+        format_label=bridge.selectedFormatLabel,
+        out_base=bridge._out_template(),
+        download_dir=bridge.downloadDir,
+        subtitle_lang=bridge._selected_subtitle,
+        subtitle_kind=bridge._selected_subtitle_kind(),
+        subtitle_label=(
+            bridge.selectedSubtitleLabel if bridge._selected_subtitle else ""
+        ),
+    )
+    for name, value in fields.items():
+        setattr(job, name, value)
+    return job
+
+
+def _record(bridge, path: str, kind: str = "video") -> None:
+    """File one saved path in the library, the way a finished job does."""
+    bridge._record(_job(bridge), str(path), kind)
 
 
 def _wait(predicate, timeout=8.0) -> bool:
@@ -90,6 +141,74 @@ def _wait(predicate, timeout=8.0) -> bool:
         time.sleep(0.01)
     QApplication.processEvents()
     return bool(predicate())
+
+
+FINISHED = ("done", "failed", "cancelled")
+
+
+def _settled(bridge) -> bool:
+    """True once every queued job has reached a final state and the lane is free."""
+    rows = bridge.queueRows
+    return (
+        not bridge.downloadRunning
+        and bridge.pendingCount == 0
+        and all(row["state"] in FINISHED for row in rows)
+    )
+
+
+def _states(bridge) -> list:
+    return [row["state"] for row in bridge.queueRows]
+
+
+def _blocking_fakes(request, monkeypatch, tmp_path, fail_on: str = ""):
+    """Download fakes that leave the first job in flight until told to let go.
+
+    A queue is only really being tested while one download is still running, so
+    the legs block on an event instead of returning at once, and honour
+    ``cancel_check`` the way the real downloader does. Returns the urls fetched,
+    the ``(url, selector)`` pairs the video leg was really handed, and the event
+    that lets the legs finish.
+
+    The event is set on teardown as well: a test that fails before releasing it
+    would otherwise leave a pool thread spinning, and ``QThreadPool``'s
+    destructor waits for its threads, so the whole session would hang.
+    """
+    calls: list[str] = []
+    seen: list[tuple] = []
+    release = threading.Event()
+    request.addfinalizer(release.set)
+
+    def fake_video(url, selector, out, **kwargs):
+        calls.append(url)
+        seen.append((url, selector))
+        cancel_check = kwargs.get("cancel_check")
+        while not release.is_set():
+            if cancel_check and cancel_check():
+                raise RuntimeError("Download canceled.")
+            time.sleep(0.01)
+        if fail_on and fail_on in url:
+            raise RuntimeError("HTTP Error 403: Forbidden")
+        path = tmp_path / f"Video [{_vid(url)}].mp4"
+        path.write_bytes(b"v")
+        return str(path)
+
+    def fake_sub(url, lang, out, kind="", **kwargs):
+        calls.append(url)
+        if fail_on and fail_on in url:
+            raise RuntimeError("HTTP Error 403: Forbidden")
+        path = tmp_path / f"Video [{_vid(url)}].{lang}.srt"
+        path.write_text("1\n", encoding="utf-8")
+        return str(path)
+
+    monkeypatch.setattr(media_source, "download_video", fake_video)
+    monkeypatch.setattr(media_source, "download_subtitle", fake_sub)
+    return calls, seen, release
+
+
+def _inspect_another(bridge, url: str, video_id: str, title: str) -> None:
+    """Move the form on to a second video, the way the user does mid-batch."""
+    _set_url(bridge, url)
+    _install(bridge, _payload(video_id=video_id, title=title))
 
 
 class TestCombinedDownload:
@@ -252,6 +371,265 @@ class TestCancel:
         assert "cancel" in ready.statusMessage.lower()
 
 
+class TestQueue:
+    """Commit several jobs while the first is still running; they go one at a time."""
+
+    def test_a_second_download_waits_its_turn(self, ready, request, tmp_path, monkeypatch):
+        calls, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A]), "the first job never started"
+        _inspect_another(ready, URL_B, "abcdefghijk", "Second video")
+        ready.download()
+
+        assert ready.queueCount == 2
+        assert _states(ready) == ["running", "queued"]
+        assert calls == [URL_A], "the queue put a second download on the wire"
+        assert ready.pendingCount == 1
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        # Both legs of the first job finish before the second job starts.
+        assert calls == [URL_A, URL_A, URL_B, URL_B], calls
+        assert _states(ready) == ["done", "done"]
+        assert ready.downloadProgress == 100
+
+    def test_a_queued_job_keeps_the_picks_it_was_committed_with(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        """The form moves on; the job must not.
+
+        Reading the selection at completion time instead of at enqueue time is
+        the failure a queue makes possible: the second video would download the
+        first one's stream, and both would be filed under the last title.
+        """
+        calls, seen, release = _blocking_fakes(request, monkeypatch, tmp_path)
+        _install(ready, _wide_payload())
+        ready.pickFormat("av1", 1080)
+        selector_a = ready._selector()
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A]), "the first job never started"
+
+        _set_url(ready, URL_B)
+        _install(ready, _wide_payload(video_id="abcdefghijk", title="Second video"))
+        ready.pickFormat("vp9", 720)
+        selector_b = ready._selector()
+        assert selector_a != selector_b, "the two picks are indistinguishable"
+
+        ready.download()
+        assert [job.format_selector for job in ready._queue] == [selector_a, selector_b]
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert seen == [(URL_A, selector_a), (URL_B, selector_b)], seen
+
+        videos = [row for row in ready.history if row["kind"] == "video"]
+        labels = {row["formatLabel"] for row in ready.queueRows}
+        assert {row["detail"] for row in videos} == labels
+        titles = {e["title"] for e in ready._history if e["kind"] == "video"}
+        assert titles == {"Test video", "Second video"}, ready._history
+
+    def test_a_failed_job_does_not_stop_the_batch(self, ready, request, tmp_path, monkeypatch):
+        calls, seen, release = _blocking_fakes(request, monkeypatch, tmp_path, fail_on="abcdefghijk")
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        _inspect_another(ready, URL_B, "abcdefghijk", "Second video")
+        ready.download()
+        _inspect_another(ready, URL_C, "lmnopqrstuv", "Third video")
+        ready.download()
+        release.set()
+
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["done", "failed", "done"]
+        assert [u for u, _ in seen] == [URL_A, URL_B, URL_C], seen
+        # The dead link costs its own row and nothing else.
+        assert ready.queueRows[1]["outcome"] == "failed"
+        assert "403" in ready.queueRows[1]["error"]
+
+    def test_the_exact_repeat_is_refused_while_it_is_still_work(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        calls, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        ready.download()
+
+        assert ready.queueCount == 1, "the same stream was queued twice"
+        assert "already" in ready.statusMessage.lower()
+        assert ready.pendingCount == 0
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["done"]
+
+    def test_a_finished_row_does_not_block_queuing_the_same_video_again(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        """Refusing the repeat protects one file from two writers, no more.
+
+        Once a job has saved, re-committing it is a deliberate re-download, and
+        making the user hunt for a way to say so is a dead end.
+        """
+        _, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+        release.set()
+
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        ready.download()
+        assert _wait(lambda: ready.queueCount == 2), ready.statusMessage
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["done", "done"]
+
+    def test_cancel_stops_one_job_and_starts_the_next(self, ready, request, tmp_path, monkeypatch):
+        calls, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        _inspect_another(ready, URL_B, "abcdefghijk", "Second video")
+        ready.download()
+
+        ready.cancelDownload()
+        # Cancelling is about this job: the waiting one is still wanted.
+        assert _wait(lambda: ready.queueRows[1]["state"] == "running"), ready.downloadStatus
+        assert _states(ready)[0] == "cancelled"
+        assert ready.queueRows[0]["outcome"] == "cancelled"
+        assert "[canceled]" in ready.queueRows[0]["status"]
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["cancelled", "done"]
+        assert ready.downloadedVideo.endswith("[abcdefghijk].mp4")
+
+    def test_clear_queue_drops_the_waiting_jobs_only(self, ready, request, tmp_path, monkeypatch):
+        calls, seen, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        _inspect_another(ready, URL_B, "abcdefghijk", "Second video")
+        ready.download()
+        _inspect_another(ready, URL_C, "lmnopqrstuv", "Third video")
+        ready.download()
+        assert ready.queueCount == 3
+
+        ready.clearQueue()
+        assert ready.queueCount == 1
+        assert _states(ready) == ["running"]
+        assert ready.downloadRunning is True
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert [u for u, _ in seen] == [URL_A], "clearing dropped the running job too"
+
+    def test_cancel_job_drops_a_waiting_job_and_leaves_the_running_one(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        calls, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        _inspect_another(ready, URL_B, "abcdefghijk", "Second video")
+        ready.download()
+        _inspect_another(ready, URL_C, "lmnopqrstuv", "Third video")
+        ready.download()
+
+        ready.cancelJob(2)
+        assert ready.queueCount == 2
+        assert ready.queueRows[1]["videoId"] == "abcdefghijk"
+        assert _states(ready) == ["running", "queued"]
+        assert ready.downloadRunning is True
+
+        ready.cancelJob(0)
+        assert _wait(lambda: ready.queueRows[0]["state"] == "cancelled")
+        assert ready.queueCount == 2, "cancelling the running row dropped the queue"
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["cancelled", "done"]
+
+    def test_dismissing_a_finished_row_hides_it_without_losing_the_result(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        _, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+        release.set()
+
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        saved = ready.downloadedVideo
+
+        ready.cancelJob(0)
+        assert ready.queueCount == 0
+        assert ready.downloadedVideo == saved, "the panel forgot what was saved"
+        assert ready.historyCount == 2
+        assert os.path.isfile(saved)
+
+    def test_a_stored_queue_comes_back_waiting_and_stopped(self, bridge, tmp_path):
+        """A restart restores the work, and starts none of it."""
+        from app.bridge import DownloaderBridge
+        from app.queue import QueueJob
+
+        job = QueueJob(
+            id=7, url=URL_A, video_id="dQw4w9WgXcQ", title="Test video",
+            format_selector="bv[height<=1080]+ba[ext=m4a]", download_dir=str(tmp_path),
+        )
+        store.save_queue(store.settings(), [job.to_dict()])
+
+        restored = DownloaderBridge()
+        assert restored.queueCount == 1
+        assert restored.downloadRunning is False
+        assert restored.pendingCount == 1
+        assert _states(restored) == ["queued"]
+        assert restored.primaryAction == "start"
+        # Ids keep counting from the restored jobs, or a new one would collide.
+        assert restored._job_seq == 7
+
+    def test_the_primary_action_names_what_the_button_means(
+        self, ready, request, tmp_path, monkeypatch
+    ):
+        calls, _, release = _blocking_fakes(request, monkeypatch, tmp_path)
+
+        assert ready.primaryAction == "download"
+        ready.download()
+        assert _wait(lambda: calls == [URL_A])
+        assert ready.primaryAction == "queue"
+
+        release.set()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert ready.primaryAction == "download"
+
+    def test_run_primary_action_starts_a_stored_queue(
+        self, clean_settings, tmp_path, monkeypatch
+    ):
+        from app.bridge import DownloaderBridge
+        from app.queue import QueueJob
+
+        def fake_video(url, selector, out, **kwargs):
+            path = tmp_path / "restored.mp4"
+            path.write_bytes(b"v")
+            return str(path)
+
+        monkeypatch.setattr(media_source, "download_video", fake_video)
+        monkeypatch.setattr(
+            media_source, "download_subtitle",
+            lambda *a, **k: pytest.fail("no subtitle leg was queued"),
+        )
+        store.save_queue(store.settings(), [QueueJob(
+            id=1, url=URL_A, video_id="dQw4w9WgXcQ", title="Test video",
+            format_selector="bv+ba", download_dir=str(tmp_path),
+        ).to_dict()])
+
+        restored = DownloaderBridge()
+        assert restored.primaryAction == "start"
+        restored.runPrimaryAction()
+        assert _wait(lambda: _settled(restored)), restored.downloadStatus
+
+        assert _states(restored) == ["done"]
+        assert restored.primaryAction == "download"
+        assert restored.historyCount == 1
+
+
 class TestValidation:
     def test_download_without_a_selection_is_refused(self, bridge, tmp_path):
         _set_url(bridge, "https://example.it/video?v=dQw4w9WgXcQ")
@@ -328,7 +706,7 @@ class TestSettingsPersistence:
     def test_history_survives_a_restart(self, bridge, tmp_path):
         path = tmp_path / "a.mp4"
         path.write_bytes(b"x")
-        bridge._record(str(path), "video")
+        _record(bridge, path)
         assert len(bridge.history) == 1
 
         from app.bridge import DownloaderBridge
@@ -383,7 +761,7 @@ class TestMediaIdentity:
             assert bridge.videoTitle == "Test video", bad
 
 
-def _wide_payload() -> dict:
+def _wide_payload(**ident) -> dict:
     """Two codecs, two heights: enough for a matrix cell to be wrong."""
     codecs, resolutions, matrix, best = media_source._build_matrix([
         {"format_id": "401", "ext": "mp4", "height": 1080,
@@ -399,7 +777,7 @@ def _wide_payload() -> dict:
          "vcodec": "none", "acodec": "mp4a.40.2", "tbr": 128,
          "filesize": 4_000_000},
     ])
-    payload = _payload()
+    payload = _payload(**ident)
     payload.update(codecs=codecs, resolutions=resolutions, matrix=matrix, best=best)
     return payload
 
@@ -459,7 +837,7 @@ class TestLibraryRowActions:
         for name in names:
             path = tmp_path / name
             path.write_bytes(b"x" * 64)
-            bridge._record(str(path), "video")
+            _record(bridge, path)
             made.append(path)
         return made
 
@@ -610,7 +988,7 @@ class TestRedownload:
             # Record with an explicit English track, so ``detail`` is a label
             # the tests below can remove again on purpose.
             bridge.selectedSubtitleTrack = "en"
-        bridge._record(str(path), kind)
+        _record(bridge, path, kind)
         return bridge
 
     def test_redownload_navigates_and_arms_the_pending_run(self, bridge, tmp_path, monkeypatch):

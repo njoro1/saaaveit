@@ -17,6 +17,12 @@ APPLICATION = "Saaaveit"
 
 DEFAULT_FILENAME_TEMPLATE = "%(title)s [%(id)s]"
 
+# Both lists are bounded because they live in ``QSettings``, and a Windows
+# ``REG_SZ`` value is not a place to grow an unbounded document. Refusing the
+# enqueue is better than silently dropping what will not fit.
+MAX_HISTORY = 200
+MAX_QUEUE = 200
+
 
 def settings() -> QSettings:
     """The one settings store this app reads and writes."""
@@ -50,7 +56,22 @@ def load_history(store: QSettings) -> list[dict]:
 
 
 def save_history(store: QSettings, entries: list[dict]) -> None:
-    store.setValue("downloads/history", json.dumps(entries[:200]))
+    store.setValue("downloads/history", json.dumps(entries[:MAX_HISTORY]))
+    store.sync()
+
+
+def load_queue(store: QSettings) -> list[dict]:
+    """Decode the persisted queue, in the order the jobs should run."""
+    raw = store.value("downloads/queue", "[]")
+    try:
+        entries = json.loads(raw if isinstance(raw, str) else "[]")
+    except (TypeError, ValueError):
+        return []
+    return [e for e in entries if isinstance(e, dict) and e.get("url")]
+
+
+def save_queue(store: QSettings, entries: list[dict]) -> None:
+    store.setValue("downloads/queue", json.dumps(entries[:MAX_QUEUE]))
     store.sync()
 
 

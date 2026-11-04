@@ -3,7 +3,8 @@
 One object, exposed to QML as ``appBridge``. It owns:
 
   * inspection state (formats + subtitle tracks for the current URL),
-  * the single download operation (video leg, then the selected subtitle leg),
+  * the download queue: many jobs, run strictly one at a time, each as a video
+    leg then the subtitle leg it was queued with,
   * the persisted library of downloaded files,
   * the persisted appearance/settings, the log and the status line.
 
@@ -36,6 +37,15 @@ from src.ytdlp import yt_dlp_available
 
 from .workers import DownloadWorker, InfoWorker
 from .thumbnail import cached_thumbnail
+from .queue import (
+    CANCELLED,
+    DONE,
+    FAILED,
+    QUEUED,
+    RUNNING,
+    TERMINAL,
+    QueueJob,
+)
 
 APP_NAME = "Saaaveit"
 APP_VERSION = "1.0.0"
@@ -173,6 +183,7 @@ class DownloaderBridge(QObject):
     logCountsChanged = Signal()
     inspectChanged = Signal()
     downloadChanged = Signal()
+    queueChanged = Signal()
     canDownloadChanged = Signal()
     historyChanged = Signal()
     themeChanged = Signal()
@@ -223,23 +234,31 @@ class DownloaderBridge(QObject):
         self._info_worker: InfoWorker | None = None
         self._info_gen = 0
 
-        # --- the download operation ---------------------------------------
+        # --- the download queue -------------------------------------------
+        # Downloads get a pool of their own, capped at one thread, so two jobs
+        # can never be in flight even if a bug let the pump start a second one.
+        # Inspection keeps ``self.threadpool``: a job may run for minutes and
+        # the form must stay usable behind it. See ``app/queue.py`` for why
+        # parallel downloads are wrong for this engine rather than merely
+        # unimplemented.
+        self._download_pool = QThreadPool()
+        self._download_pool.setMaxThreadCount(1)
         self._op_gen = 0
+        self._job_seq = 0
+        self._queue: list[QueueJob] = []
+        self._active: QueueJob | None = None
+        # The finished job the scalar download properties fall back to once the
+        # queue drains, so the panel still reports what the last one did.
+        self._last: QueueJob | None = None
         self._video_worker: DownloadWorker | None = None
         self._sub_worker: DownloadWorker | None = None
         self._download_running = False
-        self._progress = 0
-        self._stage = ""
-        self._download_status = ""
-        self._download_notice = ""
-        self._download_error = ""
-        self._video_outcome = ""
-        self._subtitle_outcome = ""
-        self._downloaded_video = ""
-        self._downloaded_subtitle = ""
-        self._pending: list[str] = []
-        self._subtitle_leg_wanted = False
         self._cancel_requested = False
+        # A refusal that never produced a job still has to reach the panel that
+        # reports the last attempt, so the reason is parked here and cleared
+        # when a job actually starts.
+        self._preflight_notice = ""
+        self._preflight_error = ""
 
         # --- settings / chrome -------------------------------------------
         self._download_dir = ""
@@ -291,6 +310,7 @@ class DownloaderBridge(QObject):
                 elif isinstance(default, str):
                     setattr(self, attr, value if isinstance(value, str) else default)
             self._history = store.load_history(self._settings)
+            self._load_queue()
             for key, attr, cast in (
                 ("window/x", "_win_x", int),
                 ("window/y", "_win_y", int),
@@ -914,50 +934,121 @@ class DownloaderBridge(QObject):
         return os.path.join(self.downloadDir, self._filename_template)
 
     # ------------------------------------------------------------ download
+    def _shown(self) -> QueueJob | None:
+        """The job the scalar download properties report on.
+
+        While a job runs that is the active one; once the queue drains the
+        panel still has to say what the last job did, so it falls back to it.
+        """
+        return self._active or self._last
+
+    def _shown_field(self, name: str, default=None):
+        job = self._shown()
+        return getattr(job, name, default) if job is not None else default
+
     @Property(bool, notify=downloadChanged)
     def downloadRunning(self) -> bool:
         return self._download_running
 
     @Property(int, notify=downloadChanged)
     def downloadProgress(self) -> int:
-        return self._progress
+        return int(self._shown_field("progress", 0))
 
     @Property(str, notify=downloadChanged)
     def downloadStage(self) -> str:
-        return self._stage
+        return self._shown_field("stage", "")
 
     @Property(str, notify=downloadChanged)
     def downloadStatus(self) -> str:
-        return self._download_status
+        return self._shown_field("status", "")
 
     @Property(str, notify=downloadChanged)
     def downloadNotice(self) -> str:
-        return self._download_notice
+        return self._preflight_notice or self._shown_field("notice", "")
 
     @Property(str, notify=downloadChanged)
     def downloadError(self) -> str:
-        return self._download_error
+        return self._preflight_error or self._shown_field("error", "")
 
     @Property(str, notify=downloadChanged)
     def videoOutcome(self) -> str:
-        return self._video_outcome
+        return self._shown_field("video_outcome", "")
 
     @Property(str, notify=downloadChanged)
     def subtitleOutcome(self) -> str:
-        return self._subtitle_outcome
+        return self._shown_field("subtitle_outcome", "")
 
     @Property(str, notify=downloadChanged)
     def downloadedVideo(self) -> str:
-        return self._downloaded_video
+        return self._shown_field("saved_video", "")
 
     @Property(str, notify=downloadChanged)
     def downloadedSubtitle(self) -> str:
-        return self._downloaded_subtitle
+        return self._shown_field("saved_subtitle", "")
 
     @Property(bool, notify=canDownloadChanged)
     def canDownload(self) -> bool:
         return bool(self.hasInfo and self.url and not self._download_running
                     and bool(self.selectedOption.get("format_selector")))
+
+    # ---------------------------------------------------------------- queue
+    @Property(int, notify=queueChanged)
+    def queueCount(self) -> int:
+        return len(self._queue)
+
+    @Property(int, notify=queueChanged)
+    def pendingCount(self) -> int:
+        return sum(1 for job in self._queue if job.state == QUEUED)
+
+    @Property(str, notify=queueChanged)
+    def primaryAction(self) -> str:
+        """What the primary button means right now, so QML never re-derives it.
+
+        ``download`` starts at once, ``queue`` joins a batch already in flight,
+        and ``start`` is the case a restored queue leaves the user in: work is
+        waiting and nothing is running.
+        """
+        if self._active is not None:
+            return "queue"
+        if self.pendingCount:
+            return "start"
+        return "download"
+
+    @Property(list, notify=queueChanged)
+    def queueRows(self) -> list:
+        rows = []
+        total = len(self._queue)
+        for index, job in enumerate(self._queue):
+            rows.append({
+                "index": index,
+                "id": job.id,
+                "name": job.name,
+                "title": job.title,
+                "url": job.url,
+                "videoId": job.video_id,
+                "thumbnail": job.thumbnail,
+                "state": job.state,
+                "stateLabel": job.state_label,
+                "outcome": job.outcome,
+                "progress": job.progress,
+                "stage": job.stage,
+                "position": index + 1,
+                "total": total,
+                "formatLabel": job.format_label,
+                "subtitleLabel": job.subtitle_label if job.subtitle_leg_wanted else "",
+                "summary": job.summary,
+                "error": job.error,
+                "notice": job.notice,
+                "status": job.status,
+                "savedVideo": job.saved_video,
+                "savedSubtitle": job.saved_subtitle,
+                "downloadDir": job.download_dir,
+                "active": job is self._active,
+                "waiting": job.state == QUEUED,
+                "cancellable": job.state in (QUEUED, RUNNING),
+                "removable": job.is_terminal,
+            })
+        return rows
 
     def _selector(self) -> str:
         return str((self.selectedOption or {}).get("format_selector") or "")
@@ -973,36 +1064,58 @@ class DownloaderBridge(QObject):
 
     @Slot()
     def download(self) -> None:
-        """Download the selected video format and, if one is selected, a subtitle."""
-        if not self._begin_operation(include_subtitle=True):
+        """Queue the selected video format and, if one is selected, a subtitle.
+
+        Starts at once when nothing is in flight; otherwise it joins the batch.
+        """
+        job = self._capture_job(include_subtitle=True)
+        if job is None:
             return
-        self._start_video_leg()
+        self._enqueue(job)
 
     @Slot()
     def downloadSubtitleOnly(self) -> None:
-        """Download just the selected subtitle track (the video is already on disk)."""
+        """Queue just the selected subtitle track (the video is already on disk)."""
         if not self._selected_subtitle:
             self._set_status("Select a subtitle track first.")
             return
-        if not self._begin_operation(include_subtitle=True, video=False):
+        job = self._capture_job(include_subtitle=True, video=False)
+        if job is None:
             return
-        self._start_subtitle_leg()
+        self._enqueue(job)
 
-    def _begin_operation(self, *, include_subtitle: bool, video: bool = True) -> bool:
-        if self._download_running:
-            return False
+    @Slot()
+    def runPrimaryAction(self) -> None:
+        """Do whatever ``primaryAction`` says the primary button currently means."""
+        if self.primaryAction == "start":
+            self.startQueue()
+        else:
+            self.download()
+
+    @Slot()
+    def startQueue(self) -> None:
+        """Begin work on a queue that is waiting but idle."""
+        self._pump()
+
+    def _capture_job(self, *, include_subtitle: bool, video: bool = True) -> QueueJob | None:
+        """Freeze the current picks into a job, or refuse with a reason.
+
+        Everything the download needs is read here and never again: after this
+        returns the user is free to inspect another video, and the job must
+        still fetch what was chosen when they queued it.
+        """
         if not self.url:
             self._set_status("Paste a video URL first.")
-            return False
+            return None
+        subtitle_lang = self._selected_subtitle if include_subtitle else ""
         if video:
             selector = self._selector()
             if not selector:
                 reason = self.selectionError or (
                     "This video is not available in the selected format."
                 )
-                self._download_notice = reason
-                self._download_error = reason
-                self._download_status = f"[error] {reason}\n"
+                self._preflight_notice = reason
+                self._preflight_error = reason
                 self.downloadChanged.emit()
                 self._set_status(reason)
                 self._set_status_state(STATUS_FAILED)
@@ -1012,103 +1125,209 @@ class DownloaderBridge(QObject):
                     reason,
                     "Choose another cell in step 2 - or use Best available.",
                 )
-                return False
-        if include_subtitle and not self._selected_subtitle and not video:
-            return False
+                return None
+        elif not subtitle_lang:
+            return None
 
+        return QueueJob(
+            id=self._next_job_id(),
+            url=self._url.strip(),
+            kind="video" if video else "subtitle",
+            video_id=self._video_id,
+            title=self._title,
+            thumbnail=self._thumbnail,
+            duration=self._duration,
+            codec=self._selected_codec,
+            resolution=str(self._selected_resolution),
+            format_selector=self._selector(),
+            format_label=self.selectedFormatLabel,
+            expect=self._expectation(),
+            out_base=self._out_template(),
+            download_dir=self.downloadDir,
+            subtitle_lang=subtitle_lang,
+            subtitle_kind=self._selected_subtitle_kind(),
+            subtitle_label=self.selectedSubtitleLabel if subtitle_lang else "",
+            subtitle_leg_wanted=bool(subtitle_lang),
+        )
+
+    def _next_job_id(self) -> int:
+        self._job_seq += 1
+        return self._job_seq
+
+    def _duplicate_of(self, job: QueueJob) -> QueueJob | None:
+        """The pending job this one repeats, if there is one.
+
+        Matched on video, stream and track. Finished rows do not block: the
+        clash worth refusing is two jobs racing to write the same file, and a
+        row that already saved is a record rather than work. The library is
+        deliberately not consulted either — re-fetching something downloaded
+        last month at a different resolution is a decision, not a mistake.
+        """
+        key = job.duplicate_key()
+        for other in self._queue:
+            if other.state in TERMINAL:
+                continue
+            if other.duplicate_key() == key:
+                return other
+        return None
+
+    def _enqueue(self, job: QueueJob) -> None:
+        clash = self._duplicate_of(job)
+        if clash is not None:
+            detail = clash.format_label or "the same stream"
+            state = "downloading" if clash.state == RUNNING else "still waiting"
+            self._set_status(
+                f"{clash.name} · {detail} is already {state}. "
+                "Drop it from the queue to fetch it again."
+            )
+            return
+        if len(self._queue) >= store.MAX_QUEUE:
+            self._set_status(
+                f"The queue holds {store.MAX_QUEUE} jobs. Clear some before adding more."
+            )
+            return
+        self._queue.append(job)
+        self._persist_queue()
+        self.queueChanged.emit()
+        self._pump()
+
+    def _pump(self) -> None:
+        """Start the next waiting job, if the lane is free.
+
+        Draining the queue leaves the last job's status line standing; nothing
+        here overwrites it, so "Saved video and subtitle" survives its own
+        completion.
+        """
+        if self._active is not None:
+            return
+        for job in self._queue:
+            if job.state == QUEUED:
+                self._start_job(job)
+                return
+
+    def _start_job(self, job: QueueJob) -> None:
         self._op_gen += 1
-        # A new operation supersedes the last failure; the banner survives a
-        # finish, but a fresh start is a fresh slate.
+        # A new job supersedes the last failure; the banner survives a finish,
+        # but a fresh start is a fresh slate.
         self.dismissFailure()
         self._cancel_requested = False
+        self._preflight_notice = ""
+        self._preflight_error = ""
+        self._active = job
         self._download_running = True
-        self._progress = 0
-        self._stage = "preparing"
-        self._download_status = ""
-        self._download_notice = ""
-        self._download_error = ""
-        self._video_outcome = "" if video else "skipped"
-        self._subtitle_outcome = "" if (include_subtitle and self._selected_subtitle) else "skipped"
-        self._downloaded_video = ""
-        self._downloaded_subtitle = ""
-        self._subtitle_leg_wanted = bool(include_subtitle and self._selected_subtitle)
-        self._pending = []
+        job.state = RUNNING
+        job.progress = 0
+        job.stage = "preparing"
+        job.status = ""
+        job.notice = ""
+        job.error = ""
+        job.saved_video = ""
+        job.saved_subtitle = ""
+        job.video_outcome = "" if job.kind == "video" else "skipped"
+        job.subtitle_outcome = "" if job.subtitle_leg_wanted else "skipped"
+        job.pending_legs = []
         self.downloadChanged.emit()
+        self.queueChanged.emit()
+        self._set_status(self._job_status_line(job))
         self._set_status_state(STATUS_RUNNING)
-        return True
+        if job.kind == "subtitle":
+            self._start_subtitle_leg(job)
+        else:
+            self._start_video_leg(job)
 
-    def _start_video_leg(self) -> None:
-        self._pending.append("video")
-        self._stage = "video"
-        self._download_status += "Preparing video download…\n"
+    def _job_position(self, job: QueueJob) -> tuple[int, int]:
+        try:
+            return self._queue.index(job) + 1, len(self._queue)
+        except ValueError:
+            return 0, 0
+
+    def _job_status_line(self, job: QueueJob) -> str:
+        """The status bar for a running job, naming its place in the batch."""
+        position, total = self._job_position(job)
+        prefix = f"Downloading {position} of {total} — " if total > 1 else "Downloading — "
+        return prefix + (job.name or job.url)
+
+    def _start_video_leg(self, job: QueueJob) -> None:
+        job.pending_legs.append("video")
+        job.stage = "video"
+        job.status += "Preparing video download…\n"
         self.downloadChanged.emit()
         worker = DownloadWorker(
             "video",
-            self.url,
-            format_selector=self._selector(),
-            out_template=self._out_template() + ".%(ext)s",
+            job.url,
+            format_selector=job.format_selector,
+            out_template=job.out_base + ".%(ext)s",
             token=self._op_gen,
-            expect=self._expectation(),
+            expect=job.expect,
         )
         worker.signals.progress.connect(self._append_log)
         worker.signals.progress.connect(self._on_download_line)
         worker.signals.percent.connect(self._on_video_percent)
         worker.signals.done.connect(self._on_leg_done)
         self._video_worker = worker
-        self.threadpool.start(worker)
+        self._download_pool.start(worker)
 
-    def _start_subtitle_leg(self) -> None:
-        self._pending.append("subtitle")
-        self._stage = "subtitle"
-        self._progress = max(self._progress, 85)
-        self._download_status += (
-            f"Fetching the {self._selected_subtitle} subtitle track…\n"
-        )
+    def _start_subtitle_leg(self, job: QueueJob) -> None:
+        job.pending_legs.append("subtitle")
+        job.stage = "subtitle"
+        job.progress = max(job.progress, 85)
+        job.status += f"Fetching the {job.subtitle_lang} subtitle track…\n"
         self.downloadChanged.emit()
         worker = DownloadWorker(
             "subtitle",
-            self.url,
-            out_template=self._out_template(),
+            job.url,
+            out_template=job.out_base,
             token=self._op_gen,
-            subtitle_lang=self._selected_subtitle,
-            subtitle_kind=self._selected_subtitle_kind(),
+            subtitle_lang=job.subtitle_lang,
+            subtitle_kind=job.subtitle_kind,
         )
         worker.signals.progress.connect(self._append_log)
         worker.signals.progress.connect(self._on_download_line)
         worker.signals.done.connect(self._on_leg_done)
         self._sub_worker = worker
-        self.threadpool.start(worker)
+        self._download_pool.start(worker)
 
     def _on_download_line(self, text: str) -> None:
-        self._download_status += text
+        job = self._active
+        if job is None:
+            return
+        job.status += text
         if text.lstrip().startswith("[warn]"):
             notice = text.strip()[len("[warn]"):].strip()
             if notice:
-                self._download_notice = notice
+                job.notice = notice
         lowered = text.lower()
         if "[audio]" in lowered:
-            self._stage = "audio"
+            job.stage = "audio"
         elif "merging formats into" in lowered or lowered.startswith("[merger]"):
-            self._stage = "merging"
-        self._download_status = self._download_status[-20000:]
+            job.stage = "merging"
+        job.status = job.status[-20000:]
         self.downloadChanged.emit()
+        self.queueChanged.emit()
 
     def _on_video_percent(self, percent: int) -> None:
-        lo, hi = (0, 85) if self._subtitle_leg_wanted else (0, 100)
+        job = self._active
+        if job is None:
+            return
+        lo, hi = (0, 85) if job.subtitle_leg_wanted else (0, 100)
         value = max(0, min(100, int(percent)))
-        self._progress = lo + (hi - lo) * value // 100
+        job.progress = lo + (hi - lo) * value // 100
         self.downloadChanged.emit()
+        self.queueChanged.emit()
 
     def _on_leg_done(self, payload: str) -> None:
         if self._payload_token(payload) != self._op_gen:
+            return
+        job = self._active
+        if job is None:
             return
         kind, _, rest = payload.split("|", 1)[-1].partition(":")
         if kind == "video":
             self._video_worker = None
         elif kind == "subtitle":
             self._sub_worker = None
-        if kind in self._pending:
-            self._pending.remove(kind)
+        if kind in job.pending_legs:
+            job.pending_legs.remove(kind)
 
         # DownloadWorker emits ``DONE:`` / ``CANCEL:`` / ``ERROR:``; the prefix
         # is everything before the token. Read it instead of hard-coding a name:
@@ -1119,94 +1338,189 @@ class DownloaderBridge(QObject):
         failed = status_prefix == "ERROR"
         if kind == "video":
             if cancelled:
-                self._video_outcome = "cancelled"
-                self._download_status += "[canceled] video download stopped.\n"
+                job.video_outcome = CANCELLED
+                job.status += "[canceled] video download stopped.\n"
             elif failed:
-                self._video_outcome = "failed"
+                job.video_outcome = FAILED
                 message = rest.strip()
-                self._download_error = message
-                self._download_status += f"[error] {message}\n"
+                job.error = message
+                job.status += f"[error] {message}\n"
                 self._classify_failure(message)
             else:
-                self._video_outcome = "ok"
-                self._downloaded_video = rest.strip()
-                self._progress = 85 if self._subtitle_leg_wanted else 100
-                self._download_status += f"[ok] saved: {self._downloaded_video}\n"
-                self._record(self._downloaded_video, "video")
+                job.video_outcome = "ok"
+                job.saved_video = rest.strip()
+                job.progress = 85 if job.subtitle_leg_wanted else 100
+                job.status += f"[ok] saved: {job.saved_video}\n"
+                self._record(job, job.saved_video, "video")
         else:
             if cancelled:
-                self._subtitle_outcome = "cancelled"
-                self._download_status += "[canceled] subtitle download stopped.\n"
+                job.subtitle_outcome = CANCELLED
+                job.status += "[canceled] subtitle download stopped.\n"
             elif failed:
-                self._subtitle_outcome = "failed"
+                job.subtitle_outcome = FAILED
                 message = rest.strip()
-                self._download_error = message
-                self._download_status += f"[error] {message}\n"
+                job.error = message
+                job.status += f"[error] {message}\n"
                 self._classify_failure(message)
             else:
-                self._subtitle_outcome = "ok"
-                self._downloaded_subtitle = rest.strip()
-                self._download_status += f"[ok] saved: {self._downloaded_subtitle}\n"
-                self._record(self._downloaded_subtitle, "subtitle")
+                job.subtitle_outcome = "ok"
+                job.saved_subtitle = rest.strip()
+                job.status += f"[ok] saved: {job.saved_subtitle}\n"
+                self._record(job, job.saved_subtitle, "subtitle")
 
         self.downloadChanged.emit()
+        self.queueChanged.emit()
 
         if self._cancel_requested:
-            self._finish_operation()
+            self._finish_job(job)
             return
-        if kind == "video" and self._subtitle_leg_wanted and self._subtitle_outcome == "":
+        if kind == "video" and job.subtitle_leg_wanted and job.subtitle_outcome == "":
             # A failed video leg must not suppress the subtitle leg.
-            self._start_subtitle_leg()
+            self._start_subtitle_leg(job)
             return
-        if not self._pending:
-            self._finish_operation()
+        if not job.pending_legs:
+            self._finish_job(job)
 
-    def _finish_operation(self) -> None:
-        if not self._download_running:
+    def _finish_job(self, job: QueueJob) -> None:
+        """Close one job out and hand the lane to the next waiting one."""
+        if self._active is not job:
             return
+        legs = (job.video_outcome, job.subtitle_outcome)
+        if self._cancel_requested or CANCELLED in legs:
+            # Cancelling the video leg after the subtitle landed still saved
+            # something, and the row should say so rather than "cancelled".
+            job.state = DONE if "ok" in legs else CANCELLED
+        elif "ok" in legs:
+            job.state = DONE
+        else:
+            job.state = FAILED
+        if "ok" in legs:
+            job.progress = 100
+        job.stage = "done"
+        job.pending_legs = []
+
+        self._active = None
+        self._last = job
         self._download_running = False
-        self._stage = "done"
-        if self._video_outcome == "ok" or self._subtitle_outcome == "ok":
-            self._progress = 100
+
+        if job.state == DONE:
             self._set_status_state(STATUS_DONE)
-        elif self._cancel_requested or "cancelled" in (self._video_outcome, self._subtitle_outcome):
+        elif job.state == CANCELLED:
             self._set_status_state(STATUS_CANCELLED)
         else:
             self._set_status_state(STATUS_FAILED)
 
+        self._set_status(self._job_message(job))
+        self.downloadChanged.emit()
+        self.queueChanged.emit()
+        self._persist_queue()
+        # A failed job does not stop the batch: the point of queueing is that
+        # one dead link out of ten costs nothing but its own row.
+        self._pump()
+
+    def _job_message(self, job: QueueJob) -> str:
         parts = []
-        if self._video_outcome == "ok":
+        if job.video_outcome == "ok":
             parts.append("video")
-        if self._subtitle_outcome == "ok":
-            parts.append(f"subtitle ({self._selected_subtitle})")
+        if job.subtitle_outcome == "ok":
+            parts.append(f"subtitle ({job.subtitle_lang})")
         if parts:
             message = "Saved " + " and ".join(parts) + "."
-        elif self._cancel_requested:
+        elif job.state == CANCELLED:
             message = "Download cancelled."
         else:
             message = "Download failed."
-        if self._download_error and not parts:
-            message += " " + self._download_error.splitlines()[0][:200]
-        self._set_status(message)
-        self.downloadChanged.emit()
+        if job.error and not parts:
+            message += " " + job.error.splitlines()[0][:200]
+        waiting = self.pendingCount
+        if waiting:
+            message += f" {waiting} still queued."
+        return message
 
     @Slot()
     def cancelDownload(self) -> None:
+        """Stop the running job. The queue advances to the next one.
+
+        ``clearQueue`` is the separate intent of dropping the waiting work too.
+        """
         if not self._download_running:
             return
         self._cancel_requested = True
-        self._download_status += "[info] canceling download…\n"
+        if self._active is not None:
+            self._active.status += "[info] canceling download…\n"
         for worker in (self._video_worker, self._sub_worker):
             if worker is not None:
                 worker.cancel()
         self.downloadChanged.emit()
 
     @Slot()
+    def clearQueue(self) -> None:
+        """Drop every job that is not running. The in-flight one is left alone."""
+        kept = [job for job in self._queue if job.state == RUNNING]
+        if len(kept) == len(self._queue):
+            return
+        self._queue = kept
+        self._persist_queue()
+        self.queueChanged.emit()
+        self._set_status("Queue cleared.")
+
+    @Slot(int)
+    def cancelJob(self, index: int) -> None:
+        """Drop a waiting job, stop the running one, or dismiss a finished row."""
+        job = self._job_at(index)
+        if job is None:
+            return
+        if job.state == QUEUED or job.state in TERMINAL:
+            # A finished row is only a record of what already happened;
+            # dismissing it must not touch the file it points at.
+            self._queue.remove(job)
+            self._persist_queue()
+            self.queueChanged.emit()
+            self._set_status(f"Removed {job.name} from the queue.")
+        elif job.state == RUNNING:
+            self.cancelDownload()
+
+    def _job_at(self, index: int) -> QueueJob | None:
+        if 0 <= index < len(self._queue):
+            return self._queue[index]
+        return None
+
+    def _persist_queue(self) -> None:
+        """Store the work still to do.
+
+        A running job is written back as waiting: the bytes it fetched are
+        resumable, and a queue that survived a crash must not look finished.
+        """
+        store.save_queue(
+            self._settings,
+            [job.to_dict() for job in self._queue if job.state in (QUEUED, RUNNING)],
+        )
+
+    def _load_queue(self) -> None:
+        """Restore waiting jobs, paused. Nothing starts by itself."""
+        self._queue = []
+        for raw in store.load_queue(self._settings):
+            try:
+                job = QueueJob.from_dict(raw)
+            except (TypeError, ValueError):
+                continue
+            job.state = QUEUED
+            self._queue.append(job)
+        self._job_seq = max((job.id for job in self._queue), default=0)
+
+    @Slot()
     def openDownloadFolder(self) -> None:
         self.openFolderForPath(self.downloadDir)
 
     # ------------------------------------------------------------- library
-    def _record(self, path: str, kind: str) -> None:
+    def _record(self, job: QueueJob, path: str, kind: str) -> None:
+        """File one saved path in the library, described by the job that made it.
+
+        Every field comes from the snapshot, never the live form: with a queue
+        the user has usually moved on to the next video by the time a job
+        lands, and reading ``self._title`` here would file it under whatever
+        was inspected last.
+        """
         if not path:
             return
         try:
@@ -1214,18 +1528,18 @@ class DownloaderBridge(QObject):
         except OSError:
             size = 0
         if kind == "video":
-            detail = self.selectedFormatLabel or "video"
+            detail = job.format_label or "video"
         else:
-            detail = self.selectedSubtitleLabel
+            detail = job.subtitle_label
         entry = store.make_entry(
             path=path,
             kind=kind,
-            title=self._title,
-            video_id=self._video_id,
-            url=self.url,
+            title=job.title,
+            video_id=job.video_id,
+            url=job.url,
             detail=detail,
             size=size,
-            duration=self._duration if kind == "video" else 0,
+            duration=job.duration if kind == "video" else 0,
         )
         self._history = [e for e in self._history if e.get("path") != path]
         self._history.insert(0, entry)

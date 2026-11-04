@@ -19,6 +19,7 @@ from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 
 from src import media_source
+from app.queue import QueueJob
 
 QML_DIR = Path(__file__).resolve().parent.parent / "ui" / "qml"
 
@@ -181,7 +182,17 @@ def _one_history_row(ui, path):
     bridge = ui.bridge
     saved = list(bridge._history)
     bridge._history = []
-    bridge._record(str(path), "video")
+    bridge._record(
+        QueueJob(
+            id=1,
+            url=bridge._url,
+            title=bridge._title,
+            video_id=bridge._video_id,
+            format_label=bridge.selectedFormatLabel,
+        ),
+        str(path),
+        "video",
+    )
     try:
         yield
     finally:
