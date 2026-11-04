@@ -734,6 +734,15 @@ class TestSubtitleTrackPicker:
             ui.bridge.selectedSubtitleTrack = saved
 
 
+def _palette_names(palette) -> list:
+    """The commands an open palette offers, rebuilt as it would be for a user."""
+    _call(palette, "open")
+    try:
+        return [row["name"] for row in palette.property("entries").toVariant()]
+    finally:
+        _call(palette, "close")
+
+
 class TestCommandPalette:
     def test_palette_is_closed_initially(self, ui):
         palette = _find(ui.root, "commandPalette")
@@ -750,6 +759,41 @@ class TestCommandPalette:
         assert "Go to Download" in names
         assert "Download" in names
         assert "Fetch subtitle only" in names
+
+    def test_a_running_job_adds_commands_instead_of_replacing_them(self, ui):
+        """The palette used to swap the whole download set for a Cancel.
+
+        With a queue, a running job is not a locked form: the batch commands
+        stay offered and Cancel joins them.
+        """
+        palette = _find(ui.root, "commandPalette")
+        with _batch(ui.bridge):
+            names = _palette_names(palette)
+            for name in ("Inspect formats", "Add to queue",
+                         "Fetch subtitle only", "Cancel download"):
+                assert name in names, names
+
+    def test_a_waiting_queue_is_offered_as_work_to_start(self, ui):
+        app = QGuiApplication.instance()
+        palette = _find(ui.root, "commandPalette")
+        bridge = ui.bridge
+        saved = (bridge._download_running, bridge._active, list(bridge._queue))
+        bridge._queue = [QueueJob(id=7, url=bridge._url, title="Waiting job")]
+        bridge._active = None
+        bridge._download_running = False
+        bridge.queueChanged.emit()
+        bridge.downloadChanged.emit()
+        try:
+            app.processEvents()
+            names = _palette_names(palette)
+            assert "Start queue" in names, names
+            assert "Clear queue" in names, names
+            assert "Cancel download" not in names, names
+        finally:
+            (bridge._download_running, bridge._active, bridge._queue) = saved
+            bridge.queueChanged.emit()
+            bridge.downloadChanged.emit()
+            app.processEvents()
 
     def test_activating_a_navigation_entry_switches_the_page(self, ui):
         palette = _find(ui.root, "commandPalette")

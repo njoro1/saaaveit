@@ -82,6 +82,8 @@ ApplicationWindow {
             appBridge.downloadSubtitleOnly()
         else if (action === "cancel")
             appBridge.cancelDownload()
+        else if (action === "clear_queue")
+            appBridge.clearQueue()
         else if (action === "open_folder")
             appBridge.openDownloadFolder()
         else if (action === "open_last")

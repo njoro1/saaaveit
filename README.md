@@ -17,6 +17,11 @@ process with any other application.
 4. Press **Download**. The video is fetched first, then the subtitle. If the
    video leg fails, the subtitle leg still runs — the outcome of each leg is
    reported separately.
+5. Queue as many as you like. While a job runs the form stays usable, the
+   primary button reads **Add to queue**, and each job keeps the picks it was
+   committed with. Downloads run strictly one at a time, in order; a failed job
+   reports its reason on its own row and the batch carries on. The queue is
+   saved and comes back stopped, so nothing starts by itself after a restart.
 
 **Fetch subtitle only** is there for the case where you already have the video.
 
@@ -62,7 +67,8 @@ Produces `dist\Saaaveit\Saaaveit.exe` (onedir).
 
 ```
 app/
-  bridge.py      the QML bridge: inspection, download, library, settings
+  bridge.py      the QML bridge: inspection, download, queue, library, settings
+  queue.py       one snapshot per queued job, run strictly one at a time
   workers.py     background inspection + download workers
 src/
   media_id.py  URL -> video id

@@ -33,19 +33,34 @@ Item {
         }
     }
 
+    // The one commit command means three things, and the bridge decides which,
+    // so the palette can never offer a word the panel is not showing.
+    function primaryCommand() {
+        var kind = appBridge.primaryAction
+        if (kind === "queue")
+            return ["Add to queue", "Join the batch that is already running"]
+        if (kind === "start")
+            return ["Start queue", "Run the jobs that are waiting"]
+        return ["Download", "Video and the selected subtitle"]
+    }
+
     function rebuild() {
         var list = []
         list.push(entry("Go to Download", "Inspect a URL and download", appBridge.shortcutFor("goto_download"), "", 0))
         list.push(entry("Go to Library", "Files already downloaded", appBridge.shortcutFor("goto_library"), "", 1))
         list.push(entry("Go to Settings", "Appearance, output, shortcuts", appBridge.shortcutFor("goto_settings"), "", 2))
 
-        if (appBridge.downloadRunning) {
-            list.push(entry("Cancel download", "Stop the running download", appBridge.shortcutFor("cancel"), "cancel"))
-        } else {
-            list.push(entry("Inspect formats", "Read the formats and subtitle tracks", appBridge.shortcutFor("inspect"), "inspect"))
-            list.push(entry("Download", "Video and the selected subtitle", appBridge.shortcutFor("download"), "download"))
-            list.push(entry("Fetch subtitle only", "Download just the subtitle track", appBridge.shortcutFor("download_subtitle"), "download_subtitle"))
-        }
+        // A job in flight no longer locks the form, so the commit commands stay
+        // offered all the time; only Cancel is a thing that can be done now.
+        var primary = primaryCommand()
+        list.push(entry("Inspect formats", "Read the formats and subtitle tracks", appBridge.shortcutFor("inspect"), "inspect"))
+        list.push(entry(primary[0], primary[1], appBridge.shortcutFor("download"), "download"))
+        list.push(entry("Fetch subtitle only", "Download just the subtitle track", appBridge.shortcutFor("download_subtitle"), "download_subtitle"))
+        if (appBridge.downloadRunning)
+            list.push(entry("Cancel download", "Stop this job and start the next", appBridge.shortcutFor("cancel"), "cancel"))
+        if (appBridge.pendingCount > 0)
+            list.push(entry("Clear queue", "Drop every job that has not started", "", "clear_queue"))
+
         list.push(entry("Open download folder", appBridge.downloadDir, appBridge.shortcutFor("open_folder"), "open_folder"))
         list.push(entry("Open last downloaded file", "The newest row in the library", appBridge.shortcutFor("open_last"), "open_last"))
         list.push(entry("Toggle light / dark", "Appearance", "", "toggle_theme"))
