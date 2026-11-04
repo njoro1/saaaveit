@@ -160,6 +160,21 @@ def test_default_accent_agrees_between_bridge_and_theme() -> None:
         "the bridge default must stay the module-level DEFAULT_ACCENT constant")
 
 
+def test_bridge_accent_ids_match_the_theme_swallows() -> None:
+    """The store sanitizer trusts ``bridge.accentChoices`` to list every real swatch.
+
+    A hue added to ``Theme`` but missing from the bridge would be scrubbed to
+    cobalt on the next launch; the reverse would boot into a hue Theme cannot
+    paint. Both are silent, so they are checked here instead.
+    """
+    from app.bridge import DownloaderBridge
+
+    bridge_ids = {c["id"] for c in DownloaderBridge.accentChoices.fget(None)}
+    theme_ids = set(_accents())
+    assert bridge_ids == theme_ids, (
+        f"bridge offers {sorted(bridge_ids)} but Theme paints {sorted(theme_ids)}")
+
+
 # --- Text ramp on its worst surface -------------------------------------------
 # "Worst" = the surface with the lowest contrast for that text colour. The ramp
 # is only guaranteed as running text, so it must clear AA everywhere it lands.

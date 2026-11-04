@@ -98,8 +98,10 @@ QtObject {
     // banded row / secondary card (`surfaceAlt`), raised or hovered row
     // (`surfaceRaised`), recessed input (`inset`).
     readonly property color background: isDark ? "#121418" : "#F3F4F7"
-    readonly property color backgroundGlow: isDark
-        ? Qt.rgba(0.541, 0.420, 1.0, 0.07) : Qt.rgba(0.357, 0.239, 0.961, 0.06)
+    // Once a hardcoded iris purple; now it follows the chosen accent so the
+    // page glow never drifts from the brand hue (cobalt by default).
+    readonly property color backgroundGlow: Qt.rgba(
+        accent.r, accent.g, accent.b, isDark ? 0.07 : 0.06)
     readonly property color surface: isDark ? "#191C22" : "#FFFFFF"
     readonly property color surfaceAlt: isDark ? "#20242B" : "#F0F1F5"
     readonly property color surfaceRaised: isDark ? "#282D36" : "#E5E7EE"

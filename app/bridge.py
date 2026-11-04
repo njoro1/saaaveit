@@ -309,6 +309,13 @@ class DownloaderBridge(QObject):
                     setattr(self, attr, str(value).lower() in ("1", "true", "yes"))
                 elif isinstance(default, str):
                     setattr(self, attr, value if isinstance(value, str) else default)
+            # ``setattr`` above bypasses the property setters, so a stale or
+            # hand-edited store could boot the chrome into a hue or mode that
+            # does not exist. Fall back to the brand defaults instead.
+            if self._accent_name not in {c["id"] for c in self.accentChoices}:
+                self._accent_name = DEFAULT_ACCENT
+            if self._theme_name not in ("dark", "light"):
+                self._theme_name = "dark"
             self._history = store.load_history(self._settings)
             self._load_queue()
             for key, attr, cast in (

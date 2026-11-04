@@ -738,6 +738,19 @@ class TestSettingsPersistence:
 
         assert DownloaderBridge().defaultSubtitleTrack == "auto"
 
+    def test_a_stale_accent_or_theme_falls_back_to_the_brand_defaults(
+        self, clean_settings
+    ):
+        from app.bridge import DEFAULT_ACCENT, DownloaderBridge
+
+        clean_settings.setValue("ui/accent", "chartreuse")
+        clean_settings.setValue("ui/theme", "neon")
+        clean_settings.sync()
+
+        reopened = DownloaderBridge()
+        assert reopened.accentName == DEFAULT_ACCENT
+        assert reopened.themeName == "dark"
+
     def test_history_survives_a_restart(self, bridge, tmp_path):
         path = tmp_path / "a.mp4"
         path.write_bytes(b"x")
