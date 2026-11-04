@@ -28,15 +28,23 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 # The app's settings are read from the real user store in production. The suite
-# must never read or write that store: redirect QSettings to a throwaway INI
-# directory before any bridge is constructed.
+# must never read or write that store.
+#
+# Redirecting the *default format* is not enough on Windows: a
+# ``QSettings(org, app)`` handle still resolves to HKCU, so a test that persists
+# anything (a queue row, a history entry, a theme) lands in the user's own
+# registry and the next session reads it back. Replace the handle outright, the
+# way ``tools/screenshot.py`` does, before any bridge is constructed.
 _SETTINGS_DIR = tempfile.mkdtemp(prefix="saaaveit-settings-")
-QSettings.setDefaultFormat(QSettings.IniFormat)
-QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _SETTINGS_DIR)
-QSettings.setPath(QSettings.IniFormat, QSettings.SystemScope, _SETTINGS_DIR)
+
+from src import store  # noqa: E402
+
+_SESSION_SETTINGS = QSettings(str(Path(_SETTINGS_DIR) / "settings.ini"), QSettings.IniFormat)
+_SESSION_SETTINGS.clear()
+_SESSION_SETTINGS.sync()
+store.settings = lambda: _SESSION_SETTINGS
 
 from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
-from src import store  # noqa: E402
 
 QML_DIR = ROOT / "ui" / "qml"
 

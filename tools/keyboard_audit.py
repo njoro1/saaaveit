@@ -39,13 +39,19 @@ from PySide6.QtQuick import QQuickItem  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
+# ``setDefaultFormat`` does not move a ``QSettings(org, app)`` handle off the
+# registry on Windows, so the store this audit writes to is replaced outright.
 _scratch = tempfile.mkdtemp(prefix="saaaveit-keyboard-")
-QSettings.setDefaultFormat(QSettings.IniFormat)
-QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, _scratch)
-QSettings.setPath(QSettings.IniFormat, QSettings.SystemScope, _scratch)
+
+from src import store  # noqa: E402
+
+_SETTINGS = QSettings(os.path.join(_scratch, "settings.ini"), QSettings.IniFormat)
+_SETTINGS.clear()
+_SETTINGS.sync()
+store.settings = lambda: _SETTINGS
 
 from app.bridge import DownloaderBridge, register_bundled_fonts  # noqa: E402
-from src import media_source, store  # noqa: E402
+from src import media_source  # noqa: E402
 
 PAGES = {0: "Download", 1: "Library", 2: "Settings"}
 
