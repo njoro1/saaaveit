@@ -35,7 +35,7 @@ from src import store, media_source
 from src.store import DEFAULT_FILENAME_TEMPLATE
 from src.ytdlp import yt_dlp_available
 
-from .workers import DownloadWorker, InfoWorker
+from .workers import DownloadWorker, InfoWorker, PlaylistWorker
 from .thumbnail import cached_thumbnail
 from .queue import (
     CANCELLED,
@@ -175,6 +175,33 @@ def format_bytes(num) -> str:
     return f"{value:.1f}PB"
 
 
+_PLAYLIST_URL_MARKS = ("list=", "/playlist", "/radiogallery")
+
+
+def _looks_like_playlist(url: str) -> bool:
+    """Cheap enough to gate the flat probe: single videos pay nothing.
+
+    The probe itself is the authority — some of these marks ride along on
+    watch URLs that are plain videos, and the bridge falls back when told.
+    """
+    lowered = (url or "").lower()
+    return any(mark in lowered for mark in _PLAYLIST_URL_MARKS)
+
+
+def _duration_text(seconds) -> str:
+    try:
+        seconds = int(seconds or 0)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
 class DownloaderBridge(QObject):
     formChanged = Signal()
     statusMessageChanged = Signal()
@@ -182,6 +209,7 @@ class DownloaderBridge(QObject):
     logTextChanged = Signal()
     logCountsChanged = Signal()
     inspectChanged = Signal()
+    playlistChanged = Signal()
     downloadChanged = Signal()
     queueChanged = Signal()
     canDownloadChanged = Signal()
@@ -235,6 +263,10 @@ class DownloaderBridge(QObject):
         self._pending_redownload = None
         self._info_worker: InfoWorker | None = None
         self._info_gen = 0
+        self._playlist_worker: PlaylistWorker | None = None
+        self._playlist_gen = 0
+        self._playlist_info: dict = {}
+        self._playlist_checked: set[int] = set()
 
         # --- the download queue -------------------------------------------
         # Downloads get a pool of their own, capped at one thread, so two jobs
@@ -515,8 +547,12 @@ class DownloaderBridge(QObject):
         self._selected_resolution = "best"
         self._selected_subtitle = ""
         self._last = None
+        self._playlist_gen += 1
+        self._playlist_info = {}
+        self._playlist_checked = set()
         self.inspectChanged.emit()
         self.downloadChanged.emit()
+        self.playlistChanged.emit()
 
     # --------------------------------------------------------- inspection
     @Slot()
@@ -544,8 +580,26 @@ class DownloaderBridge(QObject):
         # reports on ``_last`` while nothing runs, and a 100% green bar over an
         # inspection is a lie.
         self._last = None
+        self._playlist_gen += 1
+        self._playlist_info = {}
+        self._playlist_checked = set()
         self.inspectChanged.emit()
         self.downloadChanged.emit()
+        self.playlistChanged.emit()
+
+        if _looks_like_playlist(url):
+            # A flat enumeration is cheap; the full inspection would silently
+            # pick one video out of the list and call it the answer.
+            self._set_status("Checking the playlist…")
+            self._set_status_state(STATUS_RUNNING)
+            worker = PlaylistWorker(url, self._playlist_gen)
+            worker.signals.done.connect(self._on_playlist_done)
+            self._playlist_worker = worker
+            self.threadpool.start(worker)
+            return
+        self._start_video_inspection(url)
+
+    def _start_video_inspection(self, url: str) -> None:
         self._set_status("Inspecting formats and subtitle tracks…")
         self._set_status_state(STATUS_RUNNING)
 
@@ -554,6 +608,37 @@ class DownloaderBridge(QObject):
         worker.signals.done.connect(self._on_info_done)
         self._info_worker = worker
         self.threadpool.start(worker)
+
+    def _on_playlist_done(self, payload: str) -> None:
+        if self._payload_token(payload) != self._playlist_gen:
+            return
+        self._playlist_worker = None
+        if payload.startswith("PLAYLISTERROR:"):
+            # A probe that could not run must not block the video the URL may
+            # still be; fall back to the plain inspection.
+            self._start_video_inspection(self._url.strip())
+            return
+        try:
+            info = json.loads(payload.split("|", 1)[-1])
+        except (ValueError, TypeError):
+            info = {}
+        entries = info.get("entries") or []
+        if not entries:
+            # The probe knows better than the heuristic: not a playlist.
+            self._start_video_inspection(self._url.strip())
+            return
+        self._playlist_info = info
+        self._playlist_checked = set()
+        # The form describes one concrete video, and the grid has to show the
+        # first entry. Assign ``_url`` directly so the setter's reset — which
+        # would clear the playlist we just learned about — stays out of it.
+        self._url = str(entries[0].get("url") or self._url)
+        self._notify_form_changed()
+        self.playlistChanged.emit()
+        self._set_status(
+            f"Playlist “{info.get('title') or ''}” — {len(entries)} videos. "
+            "Pick a range or tick rows below, or download the first video now.")
+        self._start_video_inspection(self._url)
 
     def _on_info_done(self, payload: str) -> None:
         token = self._payload_token(payload)
@@ -681,6 +766,138 @@ class DownloaderBridge(QObject):
             f"This video has no {codec.upper()} at {wanted}p — resolution "
             "reset to Best. Change it in step 2 or under Settings → Preferred format."
         )
+
+    # ----------------------------------------------------------- playlist
+    @Property(bool, notify=playlistChanged)
+    def isPlaylistMode(self) -> bool:
+        return bool(self._playlist_info.get("entries"))
+
+    @Property(str, notify=playlistChanged)
+    def playlistTitle(self) -> str:
+        return str(self._playlist_info.get("title") or "")
+
+    @Property(str, notify=playlistChanged)
+    def playlistUploader(self) -> str:
+        return str(self._playlist_info.get("uploader") or "")
+
+    @Property(int, notify=playlistChanged)
+    def playlistCount(self) -> int:
+        return len(self._playlist_info.get("entries") or [])
+
+    @Property(int, notify=playlistChanged)
+    def playlistSelectedCount(self) -> int:
+        return len(self._playlist_checked)
+
+    @Property(list, notify=playlistChanged)
+    def playlistRows(self) -> list:
+        rows = []
+        for index, entry in enumerate(self._playlist_info.get("entries") or []):
+            rows.append({
+                "index": index,
+                "title": str(entry.get("title") or ""),
+                "durationText": _duration_text(entry.get("duration")),
+                "checked": index in self._playlist_checked,
+            })
+        return rows
+
+    @Slot(int, bool)
+    def setPlaylistChecked(self, index: int, checked: bool) -> None:
+        entries = self._playlist_info.get("entries") or []
+        if not 0 <= index < len(entries):
+            return
+        if checked:
+            self._playlist_checked.add(index)
+        else:
+            self._playlist_checked.discard(index)
+        self.playlistChanged.emit()
+
+    @Slot(str)
+    def applyPlaylistRange(self, text: str) -> None:
+        count = self.playlistCount
+        if not count:
+            return
+        picked = media_source.parse_index_range(text, count)
+        if picked is None:
+            notice = "The range could not be read — try 1-10,15 or all."
+            self._append_log(f"[warn] {notice}\n")
+            self._set_status(notice)
+            return
+        self._playlist_checked = set(picked)
+        self.playlistChanged.emit()
+        self._set_status(f"Selected {len(picked)} of {count} playlist videos.")
+
+    @Slot()
+    def clearPlaylist(self) -> None:
+        if not self._playlist_info:
+            return
+        self._playlist_gen += 1
+        self._playlist_info = {}
+        self._playlist_checked = set()
+        self.playlistChanged.emit()
+
+    def _playlist_format_label(self, codec: str, resolution: str) -> str:
+        names = {"av1": "AV1", "vp9": "VP9", "h264": "H264"}
+        head = names.get(codec, "Best")
+        tail = (
+            "Best" if str(resolution) in ("", "best") else f"{resolution}p max"
+        )
+        return f"{head} · {tail}"
+
+    def _playlist_expectation(self, codec: str, resolution: str) -> dict:
+        try:
+            height = 0 if str(resolution) == "best" else int(resolution)
+        except (TypeError, ValueError):
+            height = 0
+        return {
+            "codec": "" if codec in ("", "best") else codec,
+            "height": height,
+            "cap": True,
+        }
+
+    @Slot()
+    def downloadPlaylistSelection(self) -> None:
+        """Queue one video-only job per ticked playlist entry.
+
+        Subtitles stay out of bulk jobs: a flat playlist does not enumerate
+        tracks, and a silent per-entry guess is worse than not guessing. The
+        current codec/resolution picks become a cap-and-fallback selector
+        that any entry can serve.
+        """
+        entries = self._playlist_info.get("entries") or []
+        picked = sorted(i for i in self._playlist_checked if 0 <= i < len(entries))
+        if not picked:
+            self._set_status("Tick at least one playlist video first.")
+            return
+        codec = str(self._selected_codec or "best")
+        resolution = str(self._selected_resolution or "best")
+        selector = media_source.playlist_format_selector(codec, resolution)
+        label = self._playlist_format_label(codec, resolution)
+        expect = self._playlist_expectation(codec, resolution)
+        before = len(self._queue)
+        for index in picked:
+            entry = entries[index]
+            self._enqueue(QueueJob(
+                id=self._next_job_id(),
+                url=str(entry.get("url") or ""),
+                kind="video",
+                video_id=str(entry.get("id") or ""),
+                title=str(entry.get("title") or ""),
+                duration=int(entry.get("duration") or 0),
+                codec=codec,
+                resolution=resolution,
+                format_selector=selector,
+                format_label=label,
+                expect=expect,
+                out_base=self._out_template(),
+                download_dir=self.downloadDir,
+            ))
+        added = len(self._queue) - before
+        if added == len(picked):
+            self._set_status(f"Added {added} playlist videos to the queue.")
+        else:
+            self._set_status(
+                f"Added {added} of {len(picked)} playlist videos; the rest "
+                "were duplicates or the queue is full.")
 
     @staticmethod
     def _payload_token(payload: str) -> int:

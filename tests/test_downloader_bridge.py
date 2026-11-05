@@ -849,6 +849,150 @@ class TestFormatPreselection:
         assert reopened.preferredResolution == "720"
 
 
+PLAYLIST_URL = "https://www.youtube.com/watch?v=plfirst&list=PLtest123"
+
+
+def _playlist_payload(count: int = 3) -> dict:
+    return {
+        "title": "My list",
+        "uploader": "Some Channel",
+        "count": count,
+        "entries": [
+            {"id": f"v{i}", "title": f"Video {i}",
+             "url": f"https://www.youtube.com/watch?v=v{i}",
+             "duration": 61 * i, "index": i}
+            for i in range(1, count + 1)
+        ],
+    }
+
+
+def _probe(bridge, monkeypatch, payload: dict, url: str = PLAYLIST_URL) -> list:
+    """Hand the bridge a ``PLAYLIST:`` payload the way the worker would.
+
+    Returns the URLs the representative inspection was asked to start.
+    """
+    inspected: list[str] = []
+    monkeypatch.setattr(
+        bridge, "_start_video_inspection", lambda u: inspected.append(u))
+    bridge._url = url
+    bridge._playlist_gen += 1
+    bridge._on_playlist_done(
+        f"PLAYLIST:{bridge._playlist_gen}|" + json.dumps(payload))
+    return inspected
+
+
+class TestPlaylist:
+    def test_detection_populates_rows_and_the_representative(self, bridge, monkeypatch):
+        inspected = _probe(bridge, monkeypatch, _playlist_payload())
+        assert bridge.isPlaylistMode is True
+        assert bridge.playlistTitle == "My list"
+        assert bridge.playlistCount == 3
+        assert [r["durationText"] for r in bridge.playlistRows] == ["1:01", "2:02", "3:03"]
+        assert bridge.playlistSelectedCount == 0
+        # The form now describes the first entry, and it is being inspected.
+        assert bridge.url == "https://www.youtube.com/watch?v=v1"
+        assert inspected == ["https://www.youtube.com/watch?v=v1"]
+
+    def test_a_probe_that_says_video_is_treated_as_video(self, bridge, monkeypatch):
+        inspected = _probe(bridge, monkeypatch, {})
+        assert bridge.isPlaylistMode is False
+        assert inspected == [PLAYLIST_URL]
+
+    def test_range_replaces_the_ticks(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload(6))
+        bridge.applyPlaylistRange("1-2,5")
+        assert [r["checked"] for r in bridge.playlistRows] == [
+            True, True, False, False, True, False]
+        assert bridge.playlistSelectedCount == 3
+        bridge.applyPlaylistRange("all")
+        assert bridge.playlistSelectedCount == 6
+
+    def test_an_unreadable_range_warns_and_keeps_the_ticks(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        bridge.applyPlaylistRange("2-")
+        bridge.applyPlaylistRange("nonsense")
+        assert bridge.logWarnCount >= 1
+        assert "could not be read" in bridge.statusMessage
+        assert bridge.playlistSelectedCount == 2  # the "2-" selection stands
+
+    def test_toggling_a_row_moves_the_count(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        bridge.setPlaylistChecked(1, True)
+        bridge.setPlaylistChecked(99, True)  # out of range, ignored
+        assert bridge.playlistSelectedCount == 1
+        bridge.setPlaylistChecked(1, False)
+        assert bridge.playlistSelectedCount == 0
+
+    def test_selection_enqueues_one_capped_job_per_tick(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        started: list = []
+        monkeypatch.setattr(bridge, "_start_job", lambda job: started.append(job))
+        bridge.preferredCodec = "vp9"  # keep the first-download hook inert
+        bridge._selected_codec = "vp9"
+        bridge._selected_resolution = "1080"
+        bridge.applyPlaylistRange("1,3")
+
+        bridge.downloadPlaylistSelection()
+        assert len(bridge._queue) == 2
+        first, third = bridge._queue
+        assert first.url == "https://www.youtube.com/watch?v=v1"
+        assert third.video_id == "v3" and third.title == "Video 3"
+        assert "vcodec^=vp9" in first.format_selector
+        assert "height<=1080" in first.format_selector
+        assert first.subtitle_leg_wanted is False
+        assert first.kind == "video"
+        assert started and started[0] is first  # the pump took the lane at once
+        assert "2 playlist videos" in bridge.statusMessage
+
+    def test_an_empty_selection_says_so(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        bridge.downloadPlaylistSelection()
+        assert bridge.playlistSelectedCount == 0
+        assert "Tick at least one" in bridge.statusMessage
+
+    def test_a_new_url_drops_playlist_mode(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        assert bridge.isPlaylistMode is True
+        bridge.url = URL_C  # the setter resets; no network (patched in _probe)
+        assert bridge.isPlaylistMode is False
+        assert bridge.playlistRows == []
+
+    def test_duplicates_are_refused_like_any_other_job(self, bridge, monkeypatch):
+        _probe(bridge, monkeypatch, _playlist_payload())
+        monkeypatch.setattr(bridge, "_start_job", lambda job: None)
+        bridge.applyPlaylistRange("all")
+        bridge.downloadPlaylistSelection()
+        before = len(bridge._queue)
+        bridge.downloadPlaylistSelection()  # same ticks, same videos
+        assert len(bridge._queue) == before
+
+
+class TestParseIndexRange:
+    def test_the_shapes_a_user_can_type(self):
+        from src import media_source
+
+        assert media_source.parse_index_range("", 3) == [0, 1, 2]
+        assert media_source.parse_index_range("all", 2) == [0, 1]
+        assert media_source.parse_index_range("1-3,10", 12) == [0, 1, 2, 9]
+        assert media_source.parse_index_range("20-", 25)[-2:] == [23, 24]
+        assert media_source.parse_index_range(" 3 , 7 ", 8) == [2, 6]
+        assert media_source.parse_index_range("1-999", 10) == list(range(10))
+        assert media_source.parse_index_range("nonsense", 10) is None
+        assert media_source.parse_index_range("99", 10) is None  # out of range
+        assert media_source.parse_index_range("1-x", 5) is None
+
+    def test_format_selector_caps_and_falls_back(self):
+        from src import media_source
+
+        s = media_source.playlist_format_selector("vp9", "1080")
+        assert "vcodec^=vp9" in s and "height<=1080" in s
+        assert media_source.playlist_format_selector("best", "best") == \
+            "bestvideo+bestaudio/best"
+        # An unset resolution still caps the codec.
+        s = media_source.playlist_format_selector("h264", "best")
+        assert "vcodec^=avc1" in s and "height<=" not in s
+
+
 class TestSettingsPersistence:
     def test_download_dir_survives_a_restart(self, bridge, tmp_path):
         target = tmp_path / "downloads"

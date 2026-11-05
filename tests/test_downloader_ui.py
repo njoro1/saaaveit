@@ -1756,3 +1756,51 @@ class TestHeroIdentityChip:
         app.processEvents()
         assert QGuiApplication.clipboard().text() == bridge.videoId
         assert bridge.statusMessage == "Video ID copied."
+
+
+class TestPlaylistCard:
+    PLAYLOAD = {
+        "title": "My list",
+        "uploader": "Some Channel",
+        "count": 3,
+        "entries": [
+            {"id": f"v{i}", "title": f"Video {i}",
+             "url": f"https://www.youtube.com/watch?v=v{i}",
+             "duration": 61 * i, "index": i}
+            for i in range(1, 4)
+        ],
+    }
+
+    def test_the_card_lists_rows_range_and_enqueue(self, ui, monkeypatch):
+        bridge = ui.bridge
+        monkeypatch.setattr(bridge, "_start_video_inspection", lambda u: None)
+        saved_url = bridge._url
+        bridge._url = "https://www.youtube.com/watch?v=a&list=PLx"
+        bridge._playlist_gen += 1
+        bridge._on_playlist_done(
+            f"PLAYLIST:{bridge._playlist_gen}|" + json.dumps(self.PLAYLOAD))
+        app = QGuiApplication.instance()
+        _show_page(ui.root, 0, app)
+        try:
+            card = _find_item(ui.root, "download.playlistCard")
+            assert bool(card.property("visible"))
+            _find(ui.root, "playlist.rangeField")
+            _find(ui.root, "playlist.applyRangeButton")
+            button = _find(ui.root, "playlist.enqueueButton")
+            assert button.property("enabled") is False
+            assert "Add 0 to queue" == button.property("text")
+
+            bridge.applyPlaylistRange("1-2")
+            app.processEvents()
+            assert button.property("enabled") is True
+            assert "Add 2 to queue" == button.property("text")
+
+            checks = [c for c in _visual_tree(_find_item(ui.root, "playlist.list"))
+                      if c.objectName() == "playlist.rowCheck"]
+            assert len(checks) == 3
+            assert [bool(c.property("checked")) for c in checks] == [True, True, False]
+        finally:
+            bridge.clearPlaylist()
+            bridge._url = saved_url
+            bridge._notify_form_changed()
+            app.processEvents()

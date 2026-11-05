@@ -49,6 +49,30 @@ class InfoWorker(QRunnable):
             self.signals.done.emit(f"INFOERROR:{self.token}|{exc}")
 
 
+class PlaylistWorker(QRunnable):
+    """Enumerates a playlist cheaply with ``--flat-playlist``.
+
+    Emits ``PLAYLIST:<token>|{}`` when the URL turns out not to be a
+    playlist, so the bridge can fall back to a plain inspection without
+    re-parsing the outcome.
+    """
+
+    def __init__(self, url: str, token: int = 0) -> None:
+        super().__init__()
+        self.url = url
+        self.token = token
+        self.signals = InfoSignal()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            info = media_source.inspect_playlist(self.url)
+            self.signals.done.emit(
+                f"PLAYLIST:{self.token}|" + json.dumps(info or {}))
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user
+            self.signals.done.emit(f"PLAYLISTERROR:{self.token}|{exc}")
+
+
 class DownloadWorker(QRunnable):
     """Downloads the video, one subtitle track, or both legs of one operation.
 

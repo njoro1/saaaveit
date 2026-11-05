@@ -241,6 +241,27 @@ def main() -> int:
     bridge.queueChanged.emit()
     bridge.downloadChanged.emit()
 
+    # Playlist mode: the card sits between step 1 and the format grid, with a
+    # range already applied and one row ticked by hand on top of it.
+    _real_video_inspection = bridge._start_video_inspection
+    bridge._start_video_inspection = lambda url: None
+    bridge._url = "https://www.youtube.com/watch?v=plfirst&list=PLdemo"
+    bridge._playlist_gen += 1
+    bridge._on_playlist_done("PLAYLIST:%d|" % bridge._playlist_gen + json.dumps({
+        "title": "This week's watch list", "uploader": "Some Channel",
+        "count": 4,
+        "entries": [
+            {"id": f"v{i}", "title": f"Entry number {i}",
+             "url": f"https://www.youtube.com/watch?v=v{i}",
+             "duration": 73 * i, "index": i} for i in range(1, 5)],
+    }))
+    bridge.applyPlaylistRange("1-3")
+    bridge.setPlaylistChecked(3, True)
+    _settle(app)
+    _shoot(root, outdir, "playlist-card-dark")
+    bridge.clearPlaylist()
+    bridge._start_video_inspection = _real_video_inspection
+
     # Comfortable spacing on the densest page.
     bridge.setComfortable(True)
     root.setProperty("currentPage", 2)

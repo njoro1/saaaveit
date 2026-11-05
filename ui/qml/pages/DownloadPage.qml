@@ -337,6 +337,138 @@ Item {
                     }
                 }
 
+                // ============================================== PLAYLIST
+                // A playlist URL inspects its first video as the representative
+                // the numbered steps below act on; this card is the bulk path:
+                // range in, ticks adjusted, every tick becomes its own job.
+                Rectangle {
+                    objectName: "download.playlistCard"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 14
+                    visible: appBridge.isPlaylistMode
+                    opacity: visible ? 1 : 0
+                    implicitHeight: playlistColumn.implicitHeight + 24
+                    radius: Theme.radiusLg
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.border
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: Theme.reducedMotion ? 0 : 140
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    ColumnLayout {
+                        id: playlistColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 12
+                        spacing: Theme.sm
+
+                        Label {
+                            objectName: "download.playlistTitle"
+                            Layout.fillWidth: true
+                            text: (appBridge.playlistTitle !== ""
+                                   ? appBridge.playlistTitle : "Playlist")
+                                + " · " + appBridge.playlistCount + " videos"
+                            color: Theme.text
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.sm
+
+                            CompactTextField {
+                                id: playlistRange
+                                objectName: "playlist.rangeField"
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                label: "Range"
+                                placeholderText: "1-10,15 or all"
+                                onAccepted: appBridge.applyPlaylistRange(text)
+                            }
+
+                            AppButton {
+                                objectName: "playlist.applyRangeButton"
+                                text: "Select"
+                                variant: "ghost"
+                                onClicked: appBridge.applyPlaylistRange(
+                                    playlistRange.text)
+                            }
+                        }
+
+                        ListView {
+                            id: playlistList
+                            objectName: "playlist.list"
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: 0
+                            // Sizing off ``contentHeight`` would be circular:
+                            // it only counts delegates that were realised, and
+                            // realisation follows the height.
+                            height: Math.min(240, Math.max(1, count) * 36)
+                            clip: true
+                            model: appBridge.playlistRows
+                            boundsBehavior: Flickable.StopAtBounds
+                            ScrollBar.vertical: AppScrollBar { parent: playlistList }
+
+                            delegate: ItemDelegate {
+                                id: playlistRow
+                                objectName: "playlist.row"
+                                width: playlistList.width
+                                height: 36
+                                padding: 0
+                                background: Rectangle { color: "transparent" }
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    spacing: Theme.sm
+
+                                    CheckBox {
+                                        objectName: "playlist.rowCheck"
+                                        Layout.leftMargin: 4
+                                        checked: modelData.checked
+                                        Accessible.name: modelData.title
+                                        onToggled: appBridge.setPlaylistChecked(
+                                            modelData.index, checked)
+                                    }
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        text: (modelData.index + 1) + ". " + modelData.title
+                                        color: Theme.text
+                                        font.pixelSize: Theme.fontSmall
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Label {
+                                        visible: modelData.durationText !== ""
+                                        text: modelData.durationText
+                                        color: Theme.textMuted
+                                        font.pixelSize: Theme.fontTiny
+                                        font.family: Theme.monoFont
+                                    }
+                                }
+                            }
+                        }
+
+                        AppButton {
+                            objectName: "playlist.enqueueButton"
+                            Layout.alignment: Qt.AlignRight
+                            text: "Add " + appBridge.playlistSelectedCount + " to queue"
+                            variant: "primary"
+                            enabled: appBridge.playlistSelectedCount > 0
+                            onClicked: appBridge.downloadPlaylistSelection()
+                        }
+                    }
+                }
+
                 // =============================================== 2 FORMAT
                 StepItem {
                     Layout.fillWidth: true

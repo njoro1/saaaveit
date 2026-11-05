@@ -691,6 +691,130 @@ def inspect_video(url: str) -> dict:
     }
 
 
+# --- Playlists ----------------------------------------------------------------
+def _yt_dlp_flat_json(url: str) -> dict:
+    """Run ``yt-dlp --flat-playlist --dump-single-json`` and parse the result.
+
+    A flat enumeration resolves every entry without touching one video page
+    per entry, which is what makes probing a playlist cheap enough to run
+    before the user has decided they want it.
+    """
+    try:
+        stdout = run_ytdlp_capture(
+            _yt_dlp_cmd()
+            + ["--no-warnings", "--flat-playlist", "--dump-single-json", url],
+            timeout=180,
+        )
+    except YtdlpUnavailable as exc:
+        raise RuntimeError(_YTDLP_HINT) from exc
+    except YtdlpTimeout as exc:
+        raise RuntimeError("Timed out checking the playlist with yt-dlp.") from exc
+    except YtdlpFailed as exc:
+        raise RuntimeError(
+            "Could not check the playlist with yt-dlp: "
+            + (exc.output or str(exc) or "unknown error")
+        ) from exc
+    except YtdlpError as exc:  # pragma: no cover - defensive
+        raise RuntimeError(f"Could not run yt-dlp: {exc}") from exc
+
+    try:
+        return json.loads(stdout)
+    except ValueError as exc:
+        raise RuntimeError("Could not parse yt-dlp's playlist output.") from exc
+
+
+def inspect_playlist(url: str) -> dict | None:
+    """Return ``{"title", "uploader", "count", "entries": [...]}`` or ``None``.
+
+    ``None`` means "not a playlist" — the caller inspects the URL as a single
+    video instead. Entries carry only what a flat dump knows: id, title,
+    duration and the URL to download.
+    """
+    info = _yt_dlp_flat_json(url)
+    if str(info.get("_type") or "") != "playlist":
+        return None
+    entries: list[dict] = []
+    for raw in info.get("entries") or []:
+        if not isinstance(raw, dict):
+            continue
+        entry_id = str(raw.get("id") or "")
+        entry_url = str(raw.get("url") or "")
+        if not entry_url and entry_id:
+            entry_url = f"https://www.youtube.com/watch?v={entry_id}"
+        if not entry_url:
+            continue
+        try:
+            duration = _seconds(raw.get("duration"))
+        except (TypeError, ValueError, OverflowError):
+            duration = 0
+        entries.append({
+            "id": entry_id,
+            "title": str(raw.get("title") or entry_id),
+            "url": entry_url,
+            "duration": duration,
+            "index": len(entries) + 1,
+        })
+    return {
+        "title": str(info.get("title") or ""),
+        "uploader": str(info.get("uploader") or info.get("channel") or ""),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+_RANGE_TOKEN_RE = re.compile(r"^\s*(\d+)\s*(?:-\s*(\d*)\s*)?$")
+
+
+def parse_index_range(text: str, count: int) -> list[int] | None:
+    """Parse ``"1-10,15,20-"`` (or ``"all"``) into 0-based indices.
+
+    Returns ``None`` when nothing in the text names a valid entry, so the
+    caller can warn instead of silently selecting nothing.
+    """
+    raw = (text or "").strip().lower()
+    if raw in ("", "all", "*"):
+        return list(range(count))
+    picked: set[int] = set()
+    recognised = False
+    for part in raw.split(","):
+        match = _RANGE_TOKEN_RE.match(part)
+        if not match:
+            continue
+        start = int(match.group(1))
+        end_text = match.group(2)
+        if end_text is None:
+            end = start
+        elif end_text == "":
+            end = count
+        else:
+            end = int(end_text)
+        recognised = True
+        for number in range(max(1, start), min(count, max(start, end)) + 1):
+            picked.add(number - 1)
+    if not recognised or not picked:
+        return None
+    return sorted(picked)
+
+
+def playlist_format_selector(codec: str, resolution) -> str:
+    """A selector for the current codec/resolution pick, fit for any entry.
+
+    Playlist entries have unknown formats: the height is a cap rather than an
+    exact match, and the fallback chain lets an entry without the codec fall
+    back to its own best instead of failing the whole batch.
+    """
+    cid = "" if not codec or codec == "best" else codec
+    height = normalize_resolution(resolution)
+    cap = "" if height == "best" else f"[height<={height}]"
+    prefix = _CODEC_PREFIX.get(cid, "")
+    codec_clause = f"[vcodec^={prefix}]" if prefix else ""
+    if not codec_clause and not cap:
+        return "bestvideo+bestaudio/best"
+    fallback = _audio_safe_fallback(
+        cid, None if height == "best" else int(height))
+    return f"bestvideo{codec_clause}{cap}+bestaudio/{fallback}"
+
+
 # --- Download -----------------------------------------------------------------
 _PROGRESS_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
 _DESTINATION_RE = re.compile(r"\[download\] Destination: (.+)$")
