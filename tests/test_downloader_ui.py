@@ -89,6 +89,13 @@ def _find_item(root: QObject, name: str) -> QQuickItem:
     return obj
 
 
+def _place(item: QQuickItem, ancestor: QQuickItem) -> tuple:
+    """``item``'s box in ``ancestor``'s coordinates, as ``(x, y, w, h)``."""
+    point = item.mapToItem(ancestor, 0, 0)
+    return (point.x(), point.y(), float(item.property("width")),
+            float(item.property("height")))
+
+
 def _visual_tree(item: QQuickItem) -> list:
     out = []
 
@@ -381,6 +388,14 @@ class TestDownloadPage:
         button = _find(ui.root, "download.downloadButton")
         assert ui.bridge.canDownload is True
         assert button.property("enabled") is True
+
+    def test_paste_reads_as_a_button_beside_clear(self, ui):
+        """An affordance, not a word: the same treatment as its neighbour."""
+        paste = _find(ui.root, "download.pasteButton")
+        clear = _find(ui.root, "download.clearButton")
+        assert str(paste.property("variant")) == str(clear.property("variant"))
+        assert float(paste.property("implicitHeight")) == \
+            float(clear.property("implicitHeight"))
 
     def test_paste_button_pushes_the_clipboard_into_the_url(self, ui, monkeypatch):
         button = _find(ui.root, "download.pasteButton")
@@ -1209,6 +1224,114 @@ class TestLibraryPage:
                 assert bool(by_key["Redownload"].property("enabled")), "Redownload"
             finally:
                 _leave_library(ui, app)
+
+
+class TestClearHistoryDialog:
+    """The confirmation that empties the library, drawn as one padded block.
+
+    A ``Popup`` lays a Dialog's ``header`` and ``footer`` out *outside* its
+    ``padding``, flush with the border, which is where the review saw the
+    heading touching the top edge and the buttons the bottom and right ones.
+    Both bands are suppressed, so every inset and gap is measurable geometry.
+    """
+
+    @contextlib.contextmanager
+    def _opened(self, ui, tmp_path):
+        """The dialog, opened by the button that owns it, over a one-row library."""
+        app = QGuiApplication.instance()
+        path = tmp_path / "Kept [dQw4w9WgXcQ].mp4"
+        path.write_bytes(b"x" * 1024)
+        with _one_history_row(ui, path):
+            _show_page(ui.root, 1, app)
+            dialog = _find(ui.root, "library.clearDialog")
+            _press(_find(ui.root, "library.clearButton"))
+            app.processEvents()
+            assert bool(dialog.property("visible")), \
+                "the Clear history button must open the dialog"
+            try:
+                yield dialog
+            finally:
+                if bool(dialog.property("visible")):
+                    _call(dialog, "close")
+                app.processEvents()
+                _leave_library(ui, app)
+
+    def test_every_edge_gets_the_same_inset(self, ui, tmp_path):
+        with self._opened(ui, tmp_path) as dialog:
+            surface = dialog.property("background")
+            padding = float(dialog.property("padding"))
+            title = _place(_find_item(ui.root, "library.clearTitle"), surface)
+            confirm = _place(_find_item(ui.root, "library.clearConfirm"), surface)
+            insets = (title[1], title[0],
+                      float(surface.property("height")) - confirm[1] - confirm[3],
+                      float(surface.property("width")) - confirm[0] - confirm[2])
+            assert insets == pytest.approx((padding,) * 4, abs=0.5), insets
+
+    def test_the_default_header_and_footer_bands_are_suppressed(self, ui, tmp_path):
+        """Both bands would sit outside ``padding``, so nothing may live there."""
+        with self._opened(ui, tmp_path) as dialog:
+            for band in ("header", "footer"):
+                item = dialog.property(band)
+                assert isinstance(item, QQuickItem), band
+                assert not bool(item.property("visible")), band
+                assert float(item.property("height")) == 0.0, band
+
+    def test_the_heading_hugs_its_sentence_and_the_actions_do_not(self, ui, tmp_path):
+        """``xs`` below the title, ``lg`` below the body — and one gap each."""
+        with self._opened(ui, tmp_path) as dialog:
+            surface = dialog.property("background")
+            title = _find_item(ui.root, "library.clearTitle")
+            body = _find_item(ui.root, "library.clearBody")
+            cancel = _find_item(ui.root, "library.clearCancel")
+            heading_gap = _place(body, surface)[1] - _place(title, surface)[1] \
+                - float(title.property("height"))
+            action_gap = _place(cancel, surface)[1] - _place(body, surface)[1] \
+                - float(body.property("height"))
+            assert action_gap > heading_gap, (heading_gap, action_gap)
+            assert action_gap >= 2 * heading_gap, (heading_gap, action_gap)
+
+    def test_the_two_actions_are_the_same_size(self, ui, tmp_path):
+        with self._opened(ui, tmp_path):
+            cancel = _find_item(ui.root, "library.clearCancel")
+            confirm = _find_item(ui.root, "library.clearConfirm")
+            assert (float(cancel.property("width")), float(cancel.property("height"))) \
+                == pytest.approx((float(confirm.property("width")),
+                                  float(confirm.property("height"))), abs=0.5)
+
+    def test_focus_lands_on_cancel_so_enter_is_safe(self, ui, tmp_path):
+        """Enter dismisses; it must never be the destructive one that answers."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        with self._opened(ui, tmp_path) as dialog:
+            focused = _focused_item(ui.root.contentItem())
+            assert focused is not None and focused.objectName() == "library.clearCancel", \
+                focused
+            QTest.keyClick(ui.root, Qt.Key_Return)
+            app.processEvents()
+            assert not bool(dialog.property("visible"))
+            assert bridge.historyCount == 1, "Enter must not clear the library"
+
+    @pytest.mark.parametrize("dismiss", ["cancel", "escape"])
+    def test_the_safe_doors_both_leave_the_rows_alone(self, ui, tmp_path, dismiss):
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        with self._opened(ui, tmp_path) as dialog:
+            if dismiss == "cancel":
+                _press(_find(ui.root, "library.clearCancel"))
+            else:
+                QTest.keyClick(ui.root, Qt.Key_Escape)
+            app.processEvents()
+            assert not bool(dialog.property("visible"))
+            assert bridge.historyCount == 1
+
+    def test_confirming_is_the_only_way_to_empty_the_library(self, ui, tmp_path):
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        with self._opened(ui, tmp_path) as dialog:
+            _press(_find(ui.root, "library.clearConfirm"))
+            app.processEvents()
+            assert not bool(dialog.property("visible"))
+            assert bridge.historyCount == 0
 
 
 class TestSettingsPage:

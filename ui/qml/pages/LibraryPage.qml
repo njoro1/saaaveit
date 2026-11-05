@@ -366,7 +366,7 @@ Item {
     Dialog {
         id: confirmClear
         objectName: "library.clearDialog"
-        title: "Clear history?"
+        title: "Clear download history?"
         modal: true
         // ``.scrim{justify-content:center;padding-top:90px}`` and
         // ``#cf{margin-top:80px}``: the dialog opens on a fixed line 170px below
@@ -379,9 +379,16 @@ Item {
         // affirmative is destructive.
         closePolicy: Popup.CloseOnEscape
         // `#cf` carries `style="width:420px;margin-top:80px;padding:22px"`.
+        // One inset all round; every gap is set inside ``contentItem``.
         padding: 22
-        spacing: 0
         width: 420
+        // ``title`` stays for accessibility, but the heading the eye reads is
+        // the first line of ``contentItem``. A Popup lays ``header`` and
+        // ``footer`` out *outside* its padding, flush with the border - and the
+        // default footer is an Ok/Cancel box - so both bands are suppressed and
+        // everything shown shares the one inset.
+        header: Item { visible: false }
+        footer: Item { visible: false }
 
         Overlay.modal: Rectangle { color: Theme.scrim }
 
@@ -419,47 +426,68 @@ Item {
             }
         }
 
-        contentItem: Label {
-            text: "This only clears the list. The downloaded files stay on disk."
-            color: Theme.textMuted
-            // `.note` is 13px muted; `#cf` gives it `margin:8px 0 18px`.
-            font.pixelSize: Theme.fontSmall
-            topPadding: 8
-            bottomPadding: 18
-            wrapMode: Text.WordWrap
-        }
+        // One block; the gaps are written on the rows: ``xs`` from the heading
+        // to its sentence, ``lg`` from the sentence to the actions.
+        contentItem: ColumnLayout {
+            spacing: 0
 
-        // Basic style ships a light header band; replace it with tokens so the
-        // title keeps the dialog surface in both themes.
-        header: Label {
-            text: confirmClear.title
-            color: Theme.text
-            // `<h2 style="font-size:17px">` — the browser default weight, 700.
-            font.pixelSize: Theme.fontTitle
-            font.bold: true
-        }
-
-        footer: RowLayout {
-            spacing: Theme.sm
-
-            Item { Layout.fillWidth: true }
-
-            AppButton {
-                objectName: "library.clearCancel"
-                text: "Cancel"
-                variant: "ghost"
-                onClicked: confirmClear.reject()
+            Label {
+                objectName: "library.clearTitle"
+                text: confirmClear.title
+                color: Theme.text
+                // `<h2 style="font-size:17px">` — the browser default weight, 700.
+                font.pixelSize: Theme.fontTitle
+                font.bold: true
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
             }
 
-            AppButton {
-                objectName: "library.clearConfirm"
-                text: "Clear history"
-                variant: "danger"
-                onClicked: confirmClear.accept()
+            Label {
+                objectName: "library.clearBody"
+                // `.note` is 13px muted.
+                text: "This empties the list of downloads. The files themselves stay on disk."
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSmall
+                Layout.topMargin: Theme.xs
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                id: actions
+                // A plain word beside an outlined button reads as a link rather
+                // than a choice, and two widths give the eye no order.
+                readonly property real buttonWidth: Math.max(clearCancel.implicitWidth,
+                                                             clearConfirm.implicitWidth)
+                spacing: Theme.md
+                Layout.topMargin: Theme.lg
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    id: clearCancel
+                    objectName: "library.clearCancel"
+                    text: "Cancel"
+                    Layout.preferredWidth: actions.buttonWidth
+                    onClicked: confirmClear.reject()
+                }
+
+                AppButton {
+                    id: clearConfirm
+                    objectName: "library.clearConfirm"
+                    text: "Clear history"
+                    variant: "danger"
+                    Layout.preferredWidth: actions.buttonWidth
+                    onClicked: confirmClear.accept()
+                }
             }
         }
 
         onAccepted: appBridge.clearHistory()
+        // Focus lands on the safe door. Enter then dismisses, and the
+        // destructive button never wears the accent ring that would mark it as
+        // the default.
+        onOpened: clearCancel.forceActiveFocus()
         // Keyboard focus comes back to the button that opened the dialog.
         onClosed: clearButton.forceActiveFocus()
     }

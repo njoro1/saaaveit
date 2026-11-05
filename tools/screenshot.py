@@ -21,7 +21,7 @@ os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtCore import QObject, QUrl  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 # Importing QtQuick registers QQuickWindow with the binding layer; without it
@@ -308,6 +308,19 @@ def main() -> int:
         _settle(app)
         _shoot(root, outdir, shot)
         overlay.setProperty("visible", False)
+        _settle(app)
+
+    # The one confirmation dialog, over the page it belongs to. A Dialog is a
+    # Popup rather than an item, so it is opened through its meta-object.
+    root.setProperty("currentPage", 1)
+    dialog = root.findChild(QObject, "library.clearDialog")
+    if dialog is None:
+        print("missing dialog: library.clearDialog")
+    else:
+        dialog.metaObject().invokeMethod(dialog, "open")
+        _settle(app)
+        _shoot(root, outdir, "clear-dialog-dark")
+        dialog.metaObject().invokeMethod(dialog, "reject")
         _settle(app)
     return 0
 

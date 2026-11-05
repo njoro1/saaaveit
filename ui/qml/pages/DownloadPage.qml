@@ -135,7 +135,9 @@ Item {
                         AppButton {
                             objectName: "download.pasteButton"
                             text: "Paste"
-                            variant: "ghost"
+                            // Bordered like its ``Clear`` neighbour: a ghost here
+                            // is bare text with a click handler, which nothing
+                            // announces as a button.
                             tooltip: "Take the URL from the clipboard"
                             enabled: !appBridge.infoLoading
                             // ``text`` is bound to the bridge, so assigning
@@ -397,7 +399,9 @@ Item {
                             AppButton {
                                 objectName: "playlist.applyRangeButton"
                                 text: "Select"
-                                variant: "ghost"
+                                // The same affordance rule as the URL row's
+                                // ``Paste``: a full-size labelled action beside a
+                                // field has to look pressable.
                                 onClicked: appBridge.applyPlaylistRange(
                                     playlistRange.text)
                             }

@@ -71,6 +71,10 @@ Button {
 
     background: Rectangle {
         radius: Theme.buttonRadius
+        // The ring a focused control wears. A destructive button keeps its own
+        // colour: painting it in the app's accent presents it as the default
+        // action, which is the last thing a confirmation should do.
+        readonly property color focusRing: root._danger ? Theme.error : Theme.accentLine
         color: {
             if (root._primary) return root.hovered ? Theme.accentHover : Theme.accent
             // `.btn.d` is an outline, not a tint: transparent fill, status
@@ -81,10 +85,10 @@ Button {
             if (root.selected) return Theme.accentSoft
             return root.hovered ? Theme.surfaceRaised : Theme.surfaceAlt
         }
-        // The keyboard focus ring is a 2 px accent border; it has to win over
-        // the resting border so tabbing is always visible.
+        // The keyboard focus ring is a 2 px border; it has to win over the
+        // resting border so tabbing is always visible.
         border.width: root.activeFocus || root.selected ? 2 : (root._bordered || root._danger ? 1 : 0)
-        border.color: root.activeFocus || root.selected ? Theme.accentLine
+        border.color: root.activeFocus || root.selected ? focusRing
                       : root._danger ? Theme.error
                       : Theme.borderStrong
         Behavior on color { ColorAnimation { duration: Theme.reducedMotion ? 0 : 120 } }
