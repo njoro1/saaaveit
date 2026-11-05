@@ -28,8 +28,8 @@ from .ytdlp import (
     YtdlpFailed,
     YtdlpTimeout,
     YtdlpUnavailable,
+    dump_info_json,
     run_ytdlp,
-    run_ytdlp_capture,
     yt_dlp_available,
     yt_dlp_cmd as _yt_dlp_cmd,
 )
@@ -175,12 +175,15 @@ _YTDLP_HINT = (
 
 # --- Inspection ---------------------------------------------------------------
 def _yt_dlp_json(url: str) -> dict:
-    """Run ``yt-dlp --dump-json`` and return the parsed info dict."""
+    """Return ``yt-dlp --dump-json``'s info dict for one video.
+
+    The probe goes through :func:`ytdlp.dump_info_json`, which in a bundled build
+    reads with yt-dlp's library API instead of its CLI: the CLI runs under a
+    process-wide lock that a download holds for minutes, and waiting on it is what
+    made inspecting the next video crawl behind a running job.
+    """
     try:
-        stdout = run_ytdlp_capture(
-            _yt_dlp_cmd() + ["--no-warnings", "--no-playlist", "--dump-json", url],
-            timeout=120,
-        )
+        stdout = dump_info_json(url, timeout=120)
     except YtdlpUnavailable as exc:
         raise RuntimeError(_YTDLP_HINT) from exc
     except YtdlpTimeout as exc:
@@ -693,18 +696,15 @@ def inspect_video(url: str) -> dict:
 
 # --- Playlists ----------------------------------------------------------------
 def _yt_dlp_flat_json(url: str) -> dict:
-    """Run ``yt-dlp --flat-playlist --dump-single-json`` and parse the result.
+    """Return a flat playlist enumeration as a dict.
 
-    A flat enumeration resolves every entry without touching one video page
-    per entry, which is what makes probing a playlist cheap enough to run
-    before the user has decided they want it.
+    A flat enumeration resolves every entry without touching one video page per
+    entry, which is what makes probing a playlist cheap enough to run before the
+    user has decided they want it. Like the single-video probe it must not wait
+    for a download that holds the in-process yt-dlp lock.
     """
     try:
-        stdout = run_ytdlp_capture(
-            _yt_dlp_cmd()
-            + ["--no-warnings", "--flat-playlist", "--dump-single-json", url],
-            timeout=180,
-        )
+        stdout = dump_info_json(url, flat=True, timeout=180)
     except YtdlpUnavailable as exc:
         raise RuntimeError(_YTDLP_HINT) from exc
     except YtdlpTimeout as exc:

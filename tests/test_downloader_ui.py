@@ -214,6 +214,10 @@ def _log_lines(ui, text: str):
     bridge = ui.bridge
     saved = (bridge._log_text, bridge._log_error_count, bridge._log_warn_count)
     bridge._append_log(text)
+    # ``logTextChanged`` is throttled to a beat rather than fired per line, so
+    # let that beat run before the dialog is asked to show the log.
+    QTest.qWait(300)
+    QGuiApplication.instance().processEvents()
     try:
         yield
     finally:
@@ -446,6 +450,37 @@ class TestDownloadPage:
             assert button.property("enabled") is True
         finally:
             bridge._queue = saved
+            bridge.queueChanged.emit()
+            app.processEvents()
+
+    def test_a_finished_download_retires_the_button(self, ui):
+        """The video on screen is saved at the format on screen: say so."""
+        app = QGuiApplication.instance()
+        bridge = ui.bridge
+        saved_last = bridge._last
+        job = bridge._capture_job(include_subtitle=False)
+        job.state = DONE
+        job.video_outcome = "ok"
+        try:
+            bridge._last = job
+            bridge.queueChanged.emit()
+            _show_page(ui.root, 0, app)
+
+            button = _find(ui.root, "download.downloadButton")
+            assert button.property("text") == "Completed"
+            assert button.property("enabled") is False
+            assert _find(ui.root, "download.whyNot").property("text") == (
+                "Already downloaded — pick another format to fetch it again.")
+
+            # A different cell is a different download, so the button means it.
+            bridge.pickFormat("av1", 1080)
+            bridge.queueChanged.emit()
+            app.processEvents()
+            assert button.property("text") == "Download"
+            assert button.property("enabled") is True
+        finally:
+            bridge._last = saved_last
+            bridge.pickFormat("best", "best")
             bridge.queueChanged.emit()
             app.processEvents()
 

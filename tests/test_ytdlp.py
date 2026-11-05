@@ -15,18 +15,56 @@ import pytest
 from src import ytdlp, media_source
 
 
-def _fake_yt_dlp(handler):
-    """Install a stub ``yt_dlp`` module; returns a list of the argv it saw."""
+def _fake_yt_dlp(handler, info=None):
+    """Install a stub ``yt_dlp`` module; returns a list of the argv it saw.
+
+    ``handler`` stands in for ``yt_dlp.main``, the CLI route; ``info`` is what the
+    library route hands back, because a bundled build reads metadata through
+    ``YoutubeDL`` rather than through the CLI (see :func:`ytdlp.dump_info_json`).
+    The stub module is recorded on ``module.YoutubeDL.instances`` so a test can see
+    which options the probe asked for.
+    """
     seen: list[list[str]] = []
 
     module = types.ModuleType("yt_dlp")
+
+    class YoutubeDL:
+        instances: list["YoutubeDL"] = []
+
+        def __init__(self, opts=None) -> None:
+            self.opts = dict(opts or {})
+            self.probed: list[str] = []
+            YoutubeDL.instances.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def extract_info(self, url, download=True, process=True):
+            self.probed.append(url)
+            if download:
+                raise AssertionError("a probe must never download")
+            return info
+
+        def sanitize_info(self, data):
+            return data
 
     def main(argv=None):
         seen.append(list(argv or []))
         handler(argv or [])
         raise SystemExit(0)
 
+    utils = types.ModuleType("yt_dlp.utils")
+
+    class DownloadError(Exception):
+        pass
+
+    utils.DownloadError = DownloadError
     module.main = main
+    module.utils = utils
+    module.YoutubeDL = YoutubeDL
     return module, seen
 
 
@@ -243,6 +281,7 @@ class TestModuleIntegration:
     def test_inspect_video_works_inprocess(self, monkeypatch):
         payload = {
             "title": "Frozen build video",
+            "id": "PHAcOZ7E-pM",
             "formats": [
                 {"format_id": "401", "vcodec": "av01", "acodec": "none",
                  "height": 2160, "ext": "mp4", "tbr": 20000},
@@ -254,7 +293,7 @@ class TestModuleIntegration:
         }
 
         module, seen = _fake_yt_dlp(
-            lambda argv: print(json.dumps(payload)) or SystemExit(0)
+            lambda argv: print(json.dumps(payload)) or SystemExit(0), info=payload
         )
         monkeypatch.setitem(sys.modules, "yt_dlp", module)
         monkeypatch.setenv("YT_DLP_INPROC", "1")
@@ -266,8 +305,78 @@ class TestModuleIntegration:
             track["code"] == "en" and track["kind"] == "manual"
             for track in info["subtitle_tracks"]
         ), info["subtitle_tracks"]
-        # The launcher must never leak into the arguments handed to yt_dlp.
-        assert all(arg != "-m" and arg != "yt_dlp" for arg in seen[0])
+        # The probe goes through the library, never the CLI: the CLI route would
+        # have to wait for the lock a running download holds.
+        assert seen == []
+        assert module.YoutubeDL.instances[-1].probed == ["https://example.it/PHAcOZ7E-pM"]
+        assert module.YoutubeDL.instances[-1].opts["noplaylist"] is True
+
+    def test_a_probe_answers_while_a_download_holds_the_cli(
+        self, monkeypatch
+    ):
+        """The actual bug: reading the next video behind a running download.
+
+        ``main()`` redirects ``sys.stdout`` so in-process CLI runs are serialised
+        by one lock, and a download holds it for minutes. A probe that waited on
+        that lock turned the queue into a queue you cannot use.
+        """
+        import threading
+        import time
+
+        started = threading.Event()
+        let_go = threading.Event()
+        payload = {"title": "Next video", "id": "zz", "formats": []}
+        module, _ = _fake_yt_dlp(
+            lambda argv: (started.set(), let_go.wait(20)) and None,
+            info=payload,
+        )
+        monkeypatch.setitem(sys.modules, "yt_dlp", module)
+        monkeypatch.setenv("YT_DLP_INPROC", "1")
+
+        thread = threading.Thread(
+            target=lambda: ytdlp.run_ytdlp(["yt-dlp", "-o", "out", "URL"],
+                                           on_line=lambda line: None),
+            daemon=True,
+        )
+        thread.start()
+        assert started.wait(5), "the download never reached the CLI"
+        try:
+            began = time.monotonic()
+            out = ytdlp.dump_info_json("https://example.it/next", timeout=30)
+            assert json.loads(out)["title"] == "Next video"
+            assert time.monotonic() - began < 2, "the probe waited for the download"
+        finally:
+            let_go.set()
+            thread.join(10)
+
+    def test_playlist_probe_asks_for_a_flat_enumeration(self, monkeypatch):
+        playlist = {
+            "_type": "playlist",
+            "title": "A series",
+            "entries": [{"_type": "url", "id": "abc", "title": "One", "url": "u"}],
+        }
+        module, _ = _fake_yt_dlp(lambda argv: None, info=playlist)
+        monkeypatch.setitem(sys.modules, "yt_dlp", module)
+        monkeypatch.setenv("YT_DLP_INPROC", "1")
+
+        info = media_source.inspect_playlist("https://example.it/playlist")
+        assert info["count"] == 1
+        opts = module.YoutubeDL.instances[-1].opts
+        assert opts["extract_flat"] == "in_playlist", "a flat probe must stay flat"
+
+    def test_a_probe_failure_reads_as_an_inspection_failure(self, monkeypatch):
+        module, _ = _fake_yt_dlp(lambda argv: None, info={})
+
+        def boom(self, url, download=True, process=True):
+            raise module.utils.DownloadError("HTTP Error 403: Forbidden")
+
+        monkeypatch.setattr(module.YoutubeDL, "extract_info", boom)
+        monkeypatch.setitem(sys.modules, "yt_dlp", module)
+        monkeypatch.setenv("YT_DLP_INPROC", "1")
+
+        with pytest.raises(RuntimeError) as exc:
+            media_source.inspect_video("https://example.it/dead")
+        assert "403" in str(exc.value)
 
     def test_download_reports_percent_inprocess(self, monkeypatch, tmp_path):
         def handler(argv):

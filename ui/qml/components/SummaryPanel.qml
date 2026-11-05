@@ -55,16 +55,20 @@ Rectangle {
     readonly property bool failed: appBridge.statusState === "failed"
         || appBridge.statusState === "cancelled"
 
-    readonly property string whyNot: root.actionReady
-        ? "" : (appBridge.hasInfo ? "Choose a format to continue." : "Inspect a video first.")
+    readonly property string whyNot: actionReady
+        ? "" : (actionKind === "completed"
+            ? "Already downloaded — pick another format to fetch it again."
+            : (appBridge.hasInfo ? "Choose a format to continue." : "Inspect a video first."))
 
-    // The one button means three things, and the bridge decides which: commit a
-    // new job, join the batch already running, or start a queue that came back
-    // from the last session stopped.
+    // The one button means several things, and the bridge decides which: commit
+    // a new job, join the batch already running, start a queue that came back
+    // from the last session stopped, or say the work is already done.
     readonly property string actionKind: appBridge.primaryAction
     readonly property string actionText: actionKind === "queue"
-        ? "Add to queue" : (actionKind === "start" ? "Start queue" : "Download")
-    readonly property bool actionReady: actionKind === "start" || appBridge.canDownload
+        ? "Add to queue" : (actionKind === "start" ? "Start queue"
+        : (actionKind === "completed" ? "Completed" : "Download"))
+    readonly property bool actionReady: actionKind === "start"
+        || (actionKind !== "completed" && appBridge.canDownload)
 
     readonly property var legs: {
         var out = []

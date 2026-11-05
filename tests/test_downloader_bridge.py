@@ -674,6 +674,15 @@ class TestQueue:
 
         release.set()
         assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        # The video on screen is now saved at the format on screen, so the
+        # button stops offering to do it again.
+        assert ready.primaryAction == "completed"
+        ready.runPrimaryAction()
+        assert "Already downloaded" in ready.statusMessage
+        assert ready.queueCount == 1, "the completed action must not re-queue"
+
+        # A different pick is a different download, so the button means it again.
+        ready.pickFormat("av1", 1080)
         assert ready.primaryAction == "download"
 
     def test_run_primary_action_starts_a_stored_queue(
@@ -703,8 +712,245 @@ class TestQueue:
         assert _wait(lambda: _settled(restored)), restored.downloadStatus
 
         assert _states(restored) == ["done"]
+        # Nothing was inspected, so no video is on screen to call "completed" —
+        # the button still means "download the URL in the field".
         assert restored.primaryAction == "download"
         assert restored.historyCount == 1
+
+
+class TestCompletedAction:
+    """Once the video on screen is saved at the format on screen, say so."""
+
+    def _complete(self, ready, monkeypatch, tmp_path):
+        def fake_video(url, selector, out, **kwargs):
+            path = tmp_path / "done.mp4"
+            path.write_bytes(b"v")
+            return str(path)
+
+        monkeypatch.setattr(media_source, "download_video", fake_video)
+        monkeypatch.setattr(
+            media_source, "download_subtitle", lambda *a, **k: None
+        )
+        ready.selectedSubtitleTrack = ""
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+
+    def test_a_saved_download_retires_the_button(
+        self, ready, monkeypatch, tmp_path
+    ):
+        self._complete(ready, monkeypatch, tmp_path)
+        assert ready.primaryAction == "completed"
+
+    def test_a_second_video_in_the_batch_keeps_it_live(
+        self, ready, monkeypatch, tmp_path
+    ):
+        """Queueing another URL is work waiting, which outranks a finished one."""
+        from app.queue import QueueJob
+
+        self._complete(ready, monkeypatch, tmp_path)
+        ready._queue.append(QueueJob(
+            id=99, url=URL_B, video_id="lmnopqrstuv", title="Next",
+            kind="video", format_selector="bv+ba", download_dir=str(tmp_path),
+        ))
+        ready.queueChanged.emit()
+        assert ready.primaryAction == "start"
+
+    def test_a_failed_job_is_not_reported_as_completed(
+        self, ready, monkeypatch, tmp_path
+    ):
+        def boom(url, selector, out, **kwargs):
+            raise RuntimeError("no stream")
+
+        monkeypatch.setattr(media_source, "download_video", boom)
+        monkeypatch.setattr(
+            media_source, "download_subtitle", lambda *a, **k: None
+        )
+        ready.selectedSubtitleTrack = ""
+        ready.download()
+        assert _wait(lambda: _settled(ready)), ready.downloadStatus
+        assert _states(ready) == ["failed"]
+        assert ready.primaryAction == "download"
+
+    def test_inspecting_another_video_resets_the_button(
+        self, ready, monkeypatch, tmp_path
+    ):
+        from app import workers
+
+        self._complete(ready, monkeypatch, tmp_path)
+        assert ready.primaryAction == "completed"
+        monkeypatch.setattr(
+            media_source, "inspect_video",
+            lambda url: _payload(video_id="zzzzzzzzzzz", title="Third video"),
+        )
+        monkeypatch.setattr(workers, "cache_thumbnail", lambda *a, **k: "")
+
+        ready.inspect()
+        assert _wait(lambda: ready.videoId == "zzzzzzzzzzz"), ready.statusMessage
+        assert ready.primaryAction == "download"
+
+    @pytest.mark.parametrize("change", ["subtitle", "folder"])
+    def test_anything_the_job_would_reread_wakes_the_button(
+        self, ready, monkeypatch, tmp_path, change
+    ):
+        """"Completed" means nothing is left to do — so a new wish is a job.
+
+        A saved video plus a subtitle track that was never fetched, or the same
+        file wanted in another folder, is still work. And the button has to be
+        told: ``primaryAction`` announces itself on ``queueChanged`` only.
+        """
+        from PySide6.QtCore import QUrl
+
+        self._complete(ready, monkeypatch, tmp_path)
+        assert ready.primaryAction == "completed"
+
+        fired: list[int] = []
+        sink = lambda: fired.append(1)  # noqa: E731 - disconnectable receiver
+        ready.queueChanged.connect(sink)
+        try:
+            if change == "subtitle":
+                ready.selectedSubtitleTrack = "en"
+            else:
+                ready.setDownloadDir(QUrl.fromLocalFile(str(tmp_path / "elsewhere")))
+        finally:
+            ready.queueChanged.disconnect(sink)
+
+        assert fired, "the button was never asked what it means now"
+        assert ready.primaryAction == "download"
+
+
+class TestCoalescedNotifications:
+    """A line flood must not rebuild the whole form hundreds of times a second.
+
+    The figures stay immediate; it is the *notification* that is throttled, so
+    the GUI thread keeps frames free to answer an inspection behind a download.
+    """
+
+    def test_progress_lines_notify_once_per_beat_not_once_per_line(self, ready):
+        hits = []
+        ready.downloadChanged.connect(lambda: hits.append(1))
+        try:
+            ready._active = _job(ready)
+            for percent in range(300):
+                ready._on_video_percent(percent % 100)
+            assert ready.downloadProgress >= 99, "the value must land at once"
+            assert hits == [], "a synchronous flood must not emit per line"
+            assert _wait(lambda: hits, 2.0), "the frame beat never fired"
+        finally:
+            ready.downloadChanged.disconnect()
+            ready._active = None
+
+    def test_a_stage_change_still_lands_immediately(self, ready):
+        hits = []
+        ready.downloadChanged.connect(lambda: hits.append(1))
+        try:
+            ready._active = _job(ready)
+            ready._on_download_line("[download] 40% of 100KiB")
+            assert hits == []
+            ready._on_download_line("[audio] Extracting audio")
+            assert hits == [1], "merging must show up without waiting a beat"
+        finally:
+            ready.downloadChanged.disconnect()
+            ready._active = None
+
+    def test_the_log_grows_without_re_emitting_per_line(self, ready):
+        hits = []
+        ready.logTextChanged.connect(lambda: hits.append(1))
+        try:
+            for index in range(300):
+                ready._append_log(f"[download] line {index}\n")
+            assert "line 299" in ready.logText
+            assert hits == []
+            assert _wait(lambda: hits, 2.0)
+        finally:
+            ready.logTextChanged.disconnect()
+
+    def test_lines_faster_than_the_beat_still_get_through(self, ready):
+        """The throttle may slow notifications, never starve them.
+
+        A single-shot restarted by every line would never fire while yt-dlp
+        writes several lines a second, and the progress bar would freeze at the
+        value it held when the download started.
+        """
+        from PySide6.QtWidgets import QApplication
+
+        hits = []
+        ready.downloadChanged.connect(lambda: hits.append(1))
+        try:
+            ready._active = _job(ready)
+            for percent in range(120):
+                ready._on_video_percent(percent % 100)
+                if percent % 5 == 0:
+                    QApplication.processEvents()
+                    time.sleep(0.02)
+            assert hits, "the throttled notification starved"
+            assert len(hits) < 60, f"still notifying per line: {len(hits)}"
+        finally:
+            ready.downloadChanged.disconnect()
+            ready._active = None
+
+
+class TestInspectionSuperseded:
+    """Pasting the next URL while the previous one is still being read."""
+
+    def test_a_new_url_beats_a_stalled_inspection(self, ready, request, monkeypatch):
+        from app import workers
+
+        calls: list[str] = []
+        stall = threading.Event()
+        request.addfinalizer(stall.set)
+
+        def fake_inspect(url: str) -> dict:
+            calls.append(url)
+            if len(calls) == 1:
+                # The first read hangs, the way a slow or retried request does.
+                assert stall.wait(10), "the stalled inspection never unblocked"
+            return _payload(video_id=_vid(url), title=f"Video {_vid(url)}")
+
+        monkeypatch.setattr(media_source, "inspect_video", fake_inspect)
+        monkeypatch.setattr(workers, "cache_thumbnail", lambda *a, **k: "")
+
+        ready.url = URL_B
+        assert _wait(lambda: calls == [URL_B]), calls
+        assert ready.infoLoading is True
+
+        # The stalled read must not swallow this one: it is the only reason a
+        # queue is usable, since the next link is pasted while a job downloads.
+        ready.url = URL_C
+        assert _wait(lambda: len(calls) == 2), calls
+        stall.set()
+
+        assert _wait(lambda: ready.videoId == _vid(URL_C)), ready.statusMessage
+        assert ready.videoTitle == "Video lmnopqrstuv"
+        assert _wait(lambda: ready.infoLoading is False)
+
+    def test_a_stalled_inspection_cannot_install_its_own_result(
+        self, ready, request, monkeypatch
+    ):
+        """The dropped reply must leave the newer video's form untouched."""
+        from app import workers
+
+        release = threading.Event()
+        request.addfinalizer(release.set)
+        calls: list[str] = []
+
+        def fake_inspect(url: str) -> dict:
+            calls.append(url)
+            if len(calls) == 1:
+                assert release.wait(10), "the stalled inspection never unblocked"
+            return _payload(video_id=_vid(url), title=f"Video {_vid(url)}")
+
+        monkeypatch.setattr(media_source, "inspect_video", fake_inspect)
+        monkeypatch.setattr(workers, "cache_thumbnail", lambda *a, **k: "")
+
+        ready.url = URL_B
+        assert _wait(lambda: calls == [URL_B]), calls
+        ready.url = URL_C
+        assert _wait(lambda: len(calls) == 2), calls
+        release.set()
+        assert _wait(lambda: ready.videoId == _vid(URL_C)), ready.statusMessage
+        time.sleep(0.4)  # give the stale worker time to deliver, if it were to
+        assert ready.videoId == _vid(URL_C)
+        assert ready.videoTitle == "Video lmnopqrstuv"
 
 
 class TestValidation:

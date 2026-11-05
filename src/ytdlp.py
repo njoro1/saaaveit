@@ -21,6 +21,7 @@ Deliberately free of intra-package imports so both :mod:`src.fetch_subs` and
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -206,19 +207,25 @@ def _exit_code(code) -> int:
         return 1
 
 
-def _run_inprocess(cmd: list[str], sink: _LineSink) -> int:
-    """Run ``yt_dlp.main()`` in this process, streaming output into ``sink``."""
+def _run_inprocess(cmd: list[str], sink: _LineSink, err_sink: _LineSink | None = None) -> int:
+    """Run ``yt_dlp.main()`` in this process, streaming output into ``sink``.
+
+    ``err_sink`` keeps yt-dlp's diagnostics out of ``sink``, which matters for a
+    caller that parses the machine-readable stream; without it both streams share
+    one sink, which is what the line-by-line download reader wants.
+    """
     try:
         import yt_dlp
     except Exception as exc:  # noqa: BLE001
         raise YtdlpUnavailable(f"yt-dlp is not available: {exc}") from exc
 
     argv = _strip_launcher(list(cmd))
+    err = err_sink if err_sink is not None else sink
     saved = (sys.stdout, sys.stderr)
     rc = 0
     try:
         with _INPROC_LOCK:
-            sys.stdout = sys.stderr = sink
+            sys.stdout, sys.stderr = sink, err
             try:
                 yt_dlp.main(argv)
             except SystemExit as exc:
@@ -229,10 +236,11 @@ def _run_inprocess(cmd: list[str], sink: _LineSink) -> int:
                 sys.stdout, sys.stderr = saved
     finally:
         sys.stdout, sys.stderr = saved
-        try:
-            sink.drain()
-        except _Cancelled:
-            pass
+        for stream in (sink, err):
+            try:
+                stream.drain()
+            except _Cancelled:
+                pass
     return rc
 
 
@@ -320,16 +328,23 @@ def run_ytdlp_capture(
     :class:`YtdlpUnavailable`, :class:`YtdlpTimeout` or :class:`YtdlpFailed`.
     """
     if use_inprocess():
+        # ``--dump-json`` is machine-readable output and yt-dlp puts its chatter
+        # on stderr; merging the two would make the JSON unparseable. The error
+        # text is still wanted, so the streams are kept apart and joined only
+        # for a failure message.
         collected: list[str] = []
+        errors: list[str] = []
         deadline = _deadline_check(timeout)
         sink = _LineSink(collector=collected, cancel_check=deadline)
-        rc = _run_inprocess(cmd, sink)
+        err_sink = _LineSink(collector=errors, cancel_check=deadline)
+        rc = _run_inprocess(cmd, sink, err_sink=err_sink)
         out = "\n".join(collected)
         if rc != 0:
+            report = "\n".join(errors).strip()
             # The in-process deadline is advisory, so a timeout surfaces here.
             if deadline is not None and deadline():
-                raise YtdlpTimeout(out)
-            raise YtdlpFailed(rc, out)
+                raise YtdlpTimeout(report)
+            raise YtdlpFailed(rc, report or out)
         return out
 
     try:
@@ -355,3 +370,99 @@ def run_ytdlp_capture(
         ).strip()
         raise YtdlpFailed(exc.returncode, out) from exc
     return result.stdout
+
+
+class _CollectingLogger:
+    """yt-dlp's messages kept in memory instead of on a stream.
+
+    The library API takes a logger rather than writing to ``sys.stdout``, which is
+    what makes a probe concurrent-safe: no process-wide stream is redirected, so
+    nothing has to be serialised against a running download.
+    """
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def debug(self, msg) -> None:
+        return None
+
+    def info(self, msg) -> None:
+        return None
+
+    def warning(self, msg) -> None:
+        self.messages.append(str(msg))
+
+    def error(self, msg) -> None:
+        self.messages.append(str(msg))
+
+
+def _probe_opts(flat: bool, timeout: float | None, logger: _CollectingLogger) -> dict:
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": False,
+        "skip_download": True,
+        "noprogress": True,
+        "logger": logger,
+    }
+    if timeout:
+        opts["socket_timeout"] = float(timeout)
+    if flat:
+        # Enumerates a playlist without resolving a single entry, which is what
+        # ``--flat-playlist`` does on the command line.
+        opts["extract_flat"] = "in_playlist"
+    else:
+        opts["noplaylist"] = True
+    return opts
+
+
+def dump_info_json(
+    url: str,
+    *,
+    flat: bool = False,
+    timeout: float | None = None,
+) -> str:
+    """Return yt-dlp's info JSON for ``url`` — by whichever route this build can.
+
+    Outside a bundled executable this is a CLI call (``--dump-json``, or
+    ``--flat-playlist --dump-single-json`` when ``flat``), whose text is byte for
+    byte what the rest of the app already parses.
+
+    Inside one the CLI cannot serve a quick read: :func:`_run_inprocess` holds
+    ``_INPROC_LOCK`` for the whole run, because ``yt_dlp.main()`` rewrites
+    ``sys.stdout`` and flips process-wide flags. A download holds that lock for
+    minutes, so a probe started behind it would simply wait — which is exactly how
+    "inspecting the next video is slow while one downloads" feels. The library API
+    touches no shared state, so a bundled build reads metadata through it and the
+    form answers while a job runs.
+    """
+    if not use_inprocess():
+        args = (
+            ["--no-warnings", "--flat-playlist", "--dump-single-json"]
+            if flat
+            else ["--no-warnings", "--no-playlist", "--dump-json"]
+        )
+        return run_ytdlp_capture(
+            yt_dlp_cmd() + args + [url], timeout=timeout, env=env
+        )
+
+    try:
+        import yt_dlp
+    except Exception as exc:  # noqa: BLE001
+        raise YtdlpUnavailable(f"yt-dlp is not available: {exc}") from exc
+
+    logger = _CollectingLogger()
+    try:
+        with yt_dlp.YoutubeDL(_probe_opts(flat, timeout, logger)) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info is None:
+                raise YtdlpFailed(1, "\n".join(logger.messages) or "no information")
+            return json.dumps(
+                ydl.sanitize_info(info), ensure_ascii=False, default=str
+            )
+    except yt_dlp.utils.DownloadError as exc:
+        raise YtdlpFailed(1, str(exc) or "\n".join(logger.messages)) from exc
+    except YtdlpError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - yt-dlp raises whatever it likes
+        raise YtdlpFailed(1, f"{type(exc).__name__}: {exc}") from exc

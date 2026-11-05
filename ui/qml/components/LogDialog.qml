@@ -136,7 +136,13 @@ Item {
                     objectName: "log.text"
                     x: 12
                     width: scroll.width - 24
-                    text: appBridge.logText === "" ? "(empty)" : appBridge.logText
+                    // Read only while the dialog is up. This component lives for
+                    // the whole session, and a wrapped Text as long as the log
+                    // re-lays itself on every notification — which is work spent
+                    // hiding a body nobody is looking at.
+                    text: root.visible
+                        ? (appBridge.logText === "" ? "(empty)" : appBridge.logText)
+                        : ""
                     // ``pre.log`` sets no colour: the log is body ink at 12px on
                     // the recessed surface.
                     color: Theme.text

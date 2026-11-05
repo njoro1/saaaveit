@@ -328,6 +328,23 @@ class DownloaderBridge(QObject):
         self._save_timer.setInterval(400)
         self._save_timer.timeout.connect(self._commit_pending)
 
+        # A busy yt-dlp run writes several lines a second and every notify would
+        # otherwise re-evaluate the whole bindings graph (re-wrapping a 400 KB
+        # log, refetching the queue rows) on the GUI thread, which starves
+        # everything else — including an inspection started behind a download.
+        # Values are still written per line; only the *notification* is
+        # throttled. A restart-per-line single shot would never fire while lines
+        # arrive faster than the interval, so these repeat and stop themselves
+        # once nothing has changed since the last beat.
+        self._download_dirty = False
+        self._download_flush = QTimer(self)
+        self._download_flush.setInterval(150)
+        self._download_flush.timeout.connect(self._flush_download_changed)
+        self._log_dirty = False
+        self._log_flush = QTimer(self)
+        self._log_flush.setInterval(250)
+        self._log_flush.timeout.connect(self._flush_log_text)
+
         self._load_persisted()
 
         # `canDownload` depends on both the inspected formats and the download
@@ -384,11 +401,22 @@ class DownloaderBridge(QObject):
     def _notify_form_changed(self) -> None:
         self.formChanged.emit()
         self.readinessChanged.emit()
+        self._notify_picks_changed()
         if not self._loading:
             if not self._dirty:
                 self._dirty = True
                 self.dirtyChanged.emit()
             self._save_timer.start()
+
+    def _notify_picks_changed(self) -> None:
+        """Ask the primary button what it means now.
+
+        ``primaryAction`` notifies on ``queueChanged``, and "completed" is as
+        much a statement about the form as about the queue: a new URL, cell,
+        subtitle track or save folder is precisely what makes a spent button
+        worth clicking again.
+        """
+        self.queueChanged.emit()
 
     def _set_field(self, attr: str, value) -> None:
         if getattr(self, attr) != value:
@@ -414,6 +442,32 @@ class DownloaderBridge(QObject):
         return self._dirty
 
     # ---------------------------------------------------------------- log
+    def _mark_log_changed(self) -> None:
+        """The log grew; say so on the next beat rather than right now."""
+        self._log_dirty = True
+        if not self._log_flush.isActive():
+            self._log_flush.start()
+
+    def _flush_log_text(self) -> None:
+        if not self._log_dirty:
+            self._log_flush.stop()
+            return
+        self._log_dirty = False
+        self.logTextChanged.emit()
+
+    def _mark_download_changed(self) -> None:
+        """Live download figures moved; repaint them on the next beat."""
+        self._download_dirty = True
+        if not self._download_flush.isActive():
+            self._download_flush.start()
+
+    def _flush_download_changed(self) -> None:
+        if not self._download_dirty:
+            self._download_flush.stop()
+            return
+        self._download_dirty = False
+        self.downloadChanged.emit()
+
     def _append_log(self, text: str) -> None:
         self._log_text += text
         errors = warnings = 0
@@ -432,7 +486,7 @@ class DownloaderBridge(QObject):
             self.logCountsChanged.emit()
         if len(self._log_text) > 400_000:
             self._log_text = self._log_text[-200_000:]
-        self.logTextChanged.emit()
+        self._mark_log_changed()
 
     @Property(str, notify=logTextChanged)
     def logText(self) -> str:
@@ -553,6 +607,7 @@ class DownloaderBridge(QObject):
         self.inspectChanged.emit()
         self.downloadChanged.emit()
         self.playlistChanged.emit()
+        self.queueChanged.emit()
 
     # --------------------------------------------------------- inspection
     @Slot()
@@ -562,8 +617,9 @@ class DownloaderBridge(QObject):
             self._info_error = "Paste a video URL first."
             self.inspectChanged.emit()
             return
-        if self._info_loading:
-            return
+        # A still-running inspection is superseded, not joined: the generation
+        # tokens below drop the older result when it lands, so pasting the next
+        # URL behind a slow download never has to wait for the video before it.
         self._info_loading = True
         self._info_error = ""
         # A new inspection supersedes the last failure.
@@ -586,6 +642,7 @@ class DownloaderBridge(QObject):
         self.inspectChanged.emit()
         self.downloadChanged.emit()
         self.playlistChanged.emit()
+        self.queueChanged.emit()
 
         if _looks_like_playlist(url):
             # A flat enumeration is cheap; the full inspection would silently
@@ -1056,6 +1113,7 @@ class DownloaderBridge(QObject):
             if str(self._selected_resolution) not in {str(h) for h in family}:
                 self._selected_resolution = "best"
         self.inspectChanged.emit()
+        self._notify_picks_changed()
 
     @Property(str, notify=inspectChanged)
     def selectedResolution(self) -> str:
@@ -1067,6 +1125,7 @@ class DownloaderBridge(QObject):
         if value != self._selected_resolution:
             self._selected_resolution = value
             self.inspectChanged.emit()
+            self._notify_picks_changed()
 
     @Slot(str, "QVariant")
     def pickFormat(self, codec: str, resolution) -> None:
@@ -1088,6 +1147,7 @@ class DownloaderBridge(QObject):
         self._selected_codec = codec
         self._selected_resolution = wanted
         self.inspectChanged.emit()
+        self._notify_picks_changed()
 
     @Property(str, notify=inspectChanged)
     def selectionError(self) -> str:
@@ -1144,6 +1204,7 @@ class DownloaderBridge(QObject):
         if value != self._selected_subtitle:
             self._selected_subtitle = value
             self.inspectChanged.emit()
+            self._notify_picks_changed()
 
     def _selected_subtitle_kind(self) -> str:
         for track in self._subtitle_tracks:
@@ -1349,14 +1410,38 @@ class DownloaderBridge(QObject):
         """What the primary button means right now, so QML never re-derives it.
 
         ``download`` starts at once, ``queue`` joins a batch already in flight,
-        and ``start`` is the case a restored queue leaves the user in: work is
-        waiting and nothing is running.
+        ``start`` is the case a restored queue leaves the user in: work is
+        waiting and nothing is running. ``completed`` means the video on screen
+        has already been saved at exactly the format on screen — there is
+        nothing left for the button to do.
         """
         if self._active is not None:
             return "queue"
         if self.pendingCount:
             return "start"
+        if self._video_completed():
+            return "completed"
         return "download"
+
+    def _video_completed(self) -> bool:
+        """Whether the last finished job already matches the current form.
+
+        Derived rather than flagged so it cannot go stale: a new inspection
+        clears ``_last``, and changing anything the job would re-read — a cell,
+        a subtitle track, a folder — stops matching it.
+        """
+        job = self._last
+        return bool(
+            job is not None
+            and job.state == DONE
+            and job.kind == "video"
+            and job.video_outcome == "ok"
+            and job.video_id == self._video_id
+            and str(job.codec or "best") == str(self._selected_codec)
+            and str(job.resolution or "best") == str(self._selected_resolution)
+            and str(job.subtitle_lang or "") == str(self._selected_subtitle or "")
+            and str(job.download_dir or "") == str(self.downloadDir or "")
+        )
 
     @Property(list, notify=queueChanged)
     def queueRows(self) -> list:
@@ -1430,7 +1515,12 @@ class DownloaderBridge(QObject):
     @Slot()
     def runPrimaryAction(self) -> None:
         """Do whatever ``primaryAction`` says the primary button currently means."""
-        if self.primaryAction == "start":
+        action = self.primaryAction
+        if action == "completed":
+            self._set_status(
+                "Already downloaded at this format — pick another to fetch it again.")
+            return
+        if action == "start":
             self.startQueue()
         else:
             self.download()
@@ -1642,6 +1732,7 @@ class DownloaderBridge(QObject):
         job = self._active
         if job is None:
             return
+        stage_before = job.stage
         job.status += text
         if text.lstrip().startswith("[warn]"):
             notice = text.strip()[len("[warn]"):].strip()
@@ -1656,7 +1747,12 @@ class DownloaderBridge(QObject):
         # ``downloadChanged`` only: the row list is rebuilt wholesale on
         # ``queueChanged``, and a percent line arrives many times a second. The
         # live figures come from the scalar properties, the list carries states.
-        self.downloadChanged.emit()
+        # Plain progress lines are coalesced into the frame-beat timer; a
+        # *stage* change is a one-off event and must land immediately.
+        if job.stage != stage_before:
+            self.downloadChanged.emit()
+        else:
+            self._mark_download_changed()
 
     def _on_video_percent(self, percent: int) -> None:
         job = self._active
@@ -1667,7 +1763,7 @@ class DownloaderBridge(QObject):
         # DASH runs a second 0→100 sweep for the audio fragment; the bar may
         # only ever move forward while one job is active.
         job.progress = max(job.progress, lo + (hi - lo) * value // 100)
-        self.downloadChanged.emit()
+        self._mark_download_changed()
 
     def _on_leg_done(self, payload: str) -> None:
         if self._payload_token(payload) != self._op_gen:
